@@ -1,0 +1,41 @@
+# Local environment files
+.env
+backend/.env
+frontend/.env
+
+# Python artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+backend/.venv/
+backend/.venv311/
+venv/
+
+# Node / frontend build output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+*.tsbuildinfo
+
+# Logs and runtime files
+logs/
+backend/logs/
+*.log
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
