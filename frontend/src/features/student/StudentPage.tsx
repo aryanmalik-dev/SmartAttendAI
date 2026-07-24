@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Camera, RefreshCw, Upload, X } from "lucide-react";
+import { Camera, CameraOff, RefreshCw, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -7,6 +7,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Toast } from "../../components/ui/Toast";
 import { api, listResource } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import { registerWebcamStop } from "../../lib/webcam";
 
 type StudentSummary = {
   id: number;
@@ -46,6 +47,7 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
   const [mode, setMode] = useState<"upload" | "webcam">("upload");
   const [items, setItems] = useState<ImageItem[]>([]);
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -110,7 +112,9 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraActive(true);
     } catch {
+      setCameraActive(false);
       setError("Camera access was blocked or unavailable.");
     }
   }
@@ -119,6 +123,15 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraActive(false);
+  }
+
+  async function toggleCamera() {
+    if (streamRef.current) {
+      stopCamera();
+      return;
+    }
+    await startCamera();
   }
 
   async function captureFrame() {
@@ -153,6 +166,15 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
     return () => stopCamera();
   }, [target]);
 
+  useEffect(() => {
+    if (mode !== "webcam") stopCamera();
+  }, [mode]);
+
+  useEffect(() => {
+    const unregister = registerWebcamStop(stopCamera);
+    return () => unregister();
+  }, []);
+
   return (
     <Modal title={`Face Enrollment - ${target?.label ?? ""}`} open={Boolean(target)} onClose={closeAndReset}>
       <div className="space-y-5">
@@ -172,8 +194,8 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
             <video ref={videoRef} autoPlay playsInline className="aspect-video w-full rounded-lg bg-slate-900 object-cover" />
             <canvas ref={canvasRef} className="hidden" />
             <div className="flex flex-wrap gap-3">
-              <Button type="button" onClick={startCamera}><Camera size={16} /> Start Webcam</Button>
-              <Button type="button" onClick={captureFrame} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"><Upload size={16} /> Capture Image</Button>
+              <Button type="button" onClick={toggleCamera}>{cameraActive ? <CameraOff size={16} /> : <Camera size={16} />}{cameraActive ? " Stop Webcam" : " Start Webcam"}</Button>
+              <Button type="button" onClick={captureFrame} disabled={!cameraActive} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"><Upload size={16} /> Capture Image</Button>
             </div>
           </div>
         )}

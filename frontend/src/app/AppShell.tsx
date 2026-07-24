@@ -1,7 +1,9 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BarChart3, BookOpen, Building2, CalendarCheck, GraduationCap, LayoutDashboard, LogOut, Monitor, Settings, Users } from "lucide-react";
+import { useEffect } from "react";
 import { useAuth } from "../lib/auth";
 import { Button } from "../components/ui/Button";
+import { stopAllWebcams } from "../lib/webcam";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "faculty", "student"] },
@@ -18,10 +20,20 @@ const nav = [
 export function AppShell() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    stopAllWebcams();
+  }, [location.pathname]);
+
+  function handleNavigation() {
+    stopAllWebcams();
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-slate-200 bg-white lg:block">
-        <Link to="/" className="flex h-16 items-center gap-3 border-b border-slate-200 px-6">
+        <Link to="/" onClick={handleNavigation} className="flex h-16 items-center gap-3 border-b border-slate-200 px-6">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-600 font-bold text-white">SA</span>
           <div>
             <p className="text-base font-bold text-slate-950">SmartAttend AI</p>
@@ -32,7 +44,7 @@ export function AppShell() {
           {nav.filter((item) => user && item.roles.includes(user.role)).map((item) => {
             const Icon = item.icon;
             return (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
+              <NavLink key={item.to} to={item.to} onClick={handleNavigation} className={({ isActive }) => `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"}`}>
                 <Icon size={18} /> {item.label}
               </NavLink>
             );
@@ -45,7 +57,7 @@ export function AppShell() {
             <p className="text-sm text-slate-500">Logged in as</p>
             <h1 className="text-base font-semibold text-slate-950">{user?.full_name}</h1>
           </div>
-          <Button onClick={() => { signOut(); navigate("/login"); }} className="bg-white text-slate-700 shadow-none ring-1 ring-slate-200 hover:bg-slate-100">
+          <Button onClick={() => { stopAllWebcams(); signOut(); navigate("/login"); }} className="bg-white text-slate-700 shadow-none ring-1 ring-slate-200 hover:bg-slate-100">
             <LogOut size={16} /> Logout
           </Button>
         </header>
