@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime, time
 
 from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, Time, UniqueConstraint, func
@@ -13,16 +15,77 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class UserRoleAssignment(Base):
+    __tablename__ = "user_role_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole),
+        nullable=False,
+    )
+
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped[User] = relationship(
+        back_populates="roles",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "role",
+            name="uq_user_role",
+        ),
+    )
+
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str] = mapped_column(String(160))
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    faculty_profile: Mapped["Faculty | None"] = relationship(back_populates="user")
-    student_profile: Mapped["Student | None"] = relationship(back_populates="user")
+    faculty_profile: Mapped[Faculty | None] = relationship(back_populates="user")
+    student_profile: Mapped[Student | None] = relationship(back_populates="user")
+
+    roles: Mapped[list[UserRoleAssignment]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    email_verified: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    activation_tokens: Mapped[list[ActivationToken]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    attendance_records_marked: Mapped[list[AttendanceRecord]] = relationship(
+        foreign_keys="AttendanceRecord.marked_by_id",
+        back_populates="marked_by",
+    )
 
 
 class Department(Base, TimestampMixin):
@@ -31,6 +94,21 @@ class Department(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
+    subjects: Mapped[list[Subject]] = relationship(
+        back_populates="department",
+    )
+
+    courses: Mapped[list[Course]] = relationship(
+        back_populates="department"
+    )
+
+    students: Mapped[list[Student]] = relationship(
+        back_populates="department"
+    )
+
+    faculty_members: Mapped[list[Faculty]] = relationship(
+        back_populates="department"
+    )
 
 
 class Faculty(Base, TimestampMixin):
@@ -42,36 +120,309 @@ class Faculty(Base, TimestampMixin):
     designation: Mapped[str | None] = mapped_column(String(120))
     phone: Mapped[str | None] = mapped_column(String(40))
     user: Mapped[User] = relationship(back_populates="faculty_profile")
-    department: Mapped[Department] = relationship()
+    department: Mapped[Department] = relationship(back_populates="faculty_members")
+    subject_assignments: Mapped[list[SubjectAssignment]] = relationship(
+        back_populates="faculty",
+    )
 
 
-class Student(Base, TimestampMixin):
+class Student(Base):
     __tablename__ = "students"
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    student_number: Mapped[str] = mapped_column(String(60), unique=True, index=True)
-    department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"))
-    enrollment_year: Mapped[int] = mapped_column(Integer)
-    phone: Mapped[str | None] = mapped_column(String(40))
-    guardian_email: Mapped[str | None] = mapped_column(String(255))
-    low_attendance_threshold: Mapped[float] = mapped_column(Float, default=75)
-    user: Mapped[User] = relationship(back_populates="student_profile")
-    department: Mapped[Department] = relationship()
-    embeddings: Mapped[list["FaceEmbedding"]] = relationship(back_populates="student", cascade="all, delete-orphan")
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    student_number: Mapped[str] = mapped_column(
+        String(60),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=False,
+        index=True,
+    )
+
+    course_id: Mapped[int] = mapped_column(
+        ForeignKey("courses.id"),
+        nullable=False,
+        index=True,
+    )
+
+    enrollment_year: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+
+    semester: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+
+    section: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+
+    batch: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
+    guardian_email: Mapped[str | None] = mapped_column(
+        String(255),
+    )
+
+    low_attendance_threshold: Mapped[float] = mapped_column(
+        default=75.0,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped[User] = relationship(
+        back_populates="student_profile",
+    )
+
+    department: Mapped[Department] = relationship(
+        back_populates="students",
+    )
+
+    course: Mapped[Course] = relationship(
+        back_populates="students",
+    )
+
+    face_embeddings: Mapped[list[FaceEmbedding]] = relationship(
+        back_populates="student",
+        cascade="all, delete-orphan",
+    )
+
+    attendance_records: Mapped[list[AttendanceRecord]] = relationship(
+        back_populates="student",
+        cascade="all, delete-orphan",
+    )
 
 
-class Course(Base, TimestampMixin):
+class Course(Base):
     __tablename__ = "courses"
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(180))
-    department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"))
-    faculty_id: Mapped[int | None] = mapped_column(ForeignKey("faculty.id"))
-    semester: Mapped[str | None] = mapped_column(String(40))
-    credits: Mapped[int] = mapped_column(Integer, default=3)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    department: Mapped[Department] = relationship()
-    faculty: Mapped[Faculty | None] = relationship()
+
+    code: Mapped[str] = mapped_column(
+        String(40),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    abbreviation: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=False,
+        index=True,
+    )
+
+    duration_years: Mapped[int] = mapped_column(
+        nullable=False,
+        default=4,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    department: Mapped[Department] = relationship(
+        back_populates="courses"
+    )
+
+    subjects: Mapped[list[Subject]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+    )
+
+    students: Mapped[list[Student]] = relationship(
+        back_populates="course",
+    )
+
+
+class Subject(Base):
+    __tablename__ = "subjects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    code: Mapped[str] = mapped_column(
+        String(40),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    course_id: Mapped[int] = mapped_column(
+        ForeignKey("courses.id"),
+        nullable=False,
+        index=True,
+    )
+
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=False,
+        index=True,
+    )
+
+    semester: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+
+    credits: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    course: Mapped[Course] = relationship(
+        back_populates="subjects"
+    )
+
+    department: Mapped[Department] = relationship(
+        back_populates="subjects",
+    )
+
+    subject_assignments: Mapped[list[SubjectAssignment]] = relationship(
+        back_populates="subject",
+    )
+
+
+class SubjectAssignment(Base):
+    __tablename__ = "subject_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    faculty_id: Mapped[int] = mapped_column(
+        ForeignKey("faculty.id"),
+        nullable=False,
+        index=True,
+    )
+
+    subject_id: Mapped[int] = mapped_column(
+        ForeignKey("subjects.id"),
+        nullable=False,
+        index=True,
+    )
+
+    section: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+
+    academic_year: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    faculty: Mapped[Faculty] = relationship(
+        back_populates="subject_assignments",
+    )
+
+    subject: Mapped[Subject] = relationship(
+        back_populates="subject_assignments",
+    )
+
+    attendance_sessions: Mapped[list[AttendanceSession]] = relationship(
+        back_populates="subject_assignment",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "faculty_id",
+            "subject_id",
+            "section",
+            "academic_year",
+            name="uq_subject_assignment",
+        ),
+    )
 
 
 class Classroom(Base, TimestampMixin):
@@ -81,40 +432,91 @@ class Classroom(Base, TimestampMixin):
     building: Mapped[str] = mapped_column(String(120))
     capacity: Mapped[int] = mapped_column(Integer)
     camera_url: Mapped[str | None] = mapped_column(String(500))
+    attendance_sessions: Mapped[list[AttendanceSession]] = relationship(
+        back_populates="classroom",
+    )
 
 
-class AttendanceSession(Base, TimestampMixin):
+class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"))
-    faculty_id: Mapped[int] = mapped_column(ForeignKey("faculty.id"))
-    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"))
-    session_date: Mapped[date] = mapped_column(Date, index=True)
-    start_time: Mapped[time] = mapped_column(Time)
-    end_time: Mapped[time | None] = mapped_column(Time)
-    status: Mapped[SessionStatus] = mapped_column(Enum(SessionStatus), default=SessionStatus.SCHEDULED)
-    notes: Mapped[str | None] = mapped_column(Text)
-    course: Mapped[Course] = relationship()
-    faculty: Mapped[Faculty] = relationship()
-    classroom: Mapped[Classroom] = relationship()
-    records: Mapped[list["AttendanceRecord"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+
+    subject_assignment_id: Mapped[int] = mapped_column(
+        ForeignKey("subject_assignments.id"),
+        nullable=False,
+        index=True,
+    )
+
+    classroom_id: Mapped[int] = mapped_column(
+        ForeignKey("classrooms.id"),
+        nullable=False,
+        index=True,
+    )
+
+    session_date: Mapped[date] = mapped_column(
+        nullable=False,
+        index=True,
+    )
+
+    start_time: Mapped[time] = mapped_column(
+        nullable=False,
+    )
+
+    end_time: Mapped[time | None] = mapped_column()
+
+    status: Mapped[SessionStatus] = mapped_column(
+        nullable=False,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    subject_assignment: Mapped[SubjectAssignment] = relationship(
+        back_populates="attendance_sessions",
+    )
+
+    classroom: Mapped[Classroom] = relationship(
+        back_populates="attendance_sessions",
+    )
+
+    attendance_records: Mapped[list[AttendanceRecord]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
 
 
 class AttendanceRecord(Base, TimestampMixin):
     __tablename__ = "attendance_records"
     __table_args__ = (UniqueConstraint("session_id", "student_id", name="uq_session_student"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("attendance_sessions.id", ondelete="CASCADE"), index=True)
-    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("attendance_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True, nullable=False)
     marked_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     status: Mapped[AttendanceStatus] = mapped_column(Enum(AttendanceStatus), default=AttendanceStatus.PRESENT)
     confidence: Mapped[float | None] = mapped_column(Float)
     source: Mapped[AttendanceSource] = mapped_column(Enum(AttendanceSource), default=AttendanceSource.FACE)
-    marked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    marked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text)
-    session: Mapped[AttendanceSession] = relationship(back_populates="records")
-    student: Mapped[Student] = relationship()
-    marked_by: Mapped[User | None] = relationship()
+    session: Mapped[AttendanceSession] = relationship(back_populates="attendance_records")
+    student: Mapped[Student] = relationship(back_populates="attendance_records")
+    marked_by: Mapped[User | None] = relationship(
+        back_populates="attendance_records_marked",
+    )
 
 
 class FaceEmbedding(Base, TimestampMixin):
@@ -126,7 +528,7 @@ class FaceEmbedding(Base, TimestampMixin):
     model_name: Mapped[str] = mapped_column(String(80), default="buffalo_l")
     model_version: Mapped[str] = mapped_column(String(80), default="insightface")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    student: Mapped[Student] = relationship(back_populates="embeddings")
+    student: Mapped[Student] = relationship(back_populates="face_embeddings")
 
 
 class Notification(Base, TimestampMixin):
@@ -147,3 +549,33 @@ class SystemSetting(Base, TimestampMixin):
     key: Mapped[str] = mapped_column(String(120), unique=True)
     value: Mapped[dict] = mapped_column(JSONB)
     description: Mapped[str | None] = mapped_column(Text)
+
+
+class ActivationToken(Base, TimestampMixin):
+    __tablename__ = "activation_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    token: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+    )
+
+    used: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    user: Mapped[User] = relationship(
+        back_populates="activation_tokens",
+    )
