@@ -7,7 +7,9 @@ from app.core.responses import ok, page
 from app.db.session import get_db
 from app.models.entities import AttendanceRecord, AttendanceSession, User
 from app.models.enums import UserRole
-from app.schemas.common import AttendanceRecordOut, ManualAttendanceIn, RecognitionIn, RecognitionOut, SessionIn, SessionOut
+from app.schemas.attendance_session import AttendanceSessionCreate, AttendanceSessionOut, AttendanceSessionUpdate
+from app.schemas.common import AttendanceRecordOut, ManualAttendanceIn, RecognitionIn, RecognitionOut
+from app.services.attendance_session import AttendanceSessionService
 from app.services.attendance import mark_manual, recognize_and_mark
 from app.services.face import decode_base64_image, get_face_provider
 
@@ -15,20 +17,56 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
 @router.get("/sessions")
-def list_sessions(db: Session = Depends(get_db), p: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
-    stmt = select(AttendanceSession).order_by(AttendanceSession.session_date.desc(), AttendanceSession.start_time.desc())
-    total = len(db.scalars(stmt).all())
-    items = db.scalars(stmt.offset((p - 1) * size).limit(size)).all()
-    return page([SessionOut.model_validate(i).model_dump(mode="json") for i in items], total, p, size)
+def list_sessions(
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+    p: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    search: str | None = None,
+):
+    items, total = AttendanceSessionService(db).list(p, size, search)
+    return page([AttendanceSessionOut.model_validate(item).model_dump(mode="json") for item in items], total, p, size)
 
 
 @router.post("/sessions")
-def create_session(payload: SessionIn, user: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)), db: Session = Depends(get_db)):
-    item = AttendanceSession(**payload.model_dump())
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return ok(SessionOut.model_validate(item).model_dump(mode="json"), "Attendance session created")
+def create_session(
+    payload: AttendanceSessionCreate,
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    item = AttendanceSessionService(db).create(payload)
+    return ok(AttendanceSessionOut.model_validate(item).model_dump(mode="json"), "Attendance session created")
+
+
+@router.get("/sessions/{session_id}")
+def get_session(
+    session_id: int,
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    item = AttendanceSessionService(db).get(session_id)
+    return ok(AttendanceSessionOut.model_validate(item).model_dump(mode="json"))
+
+
+@router.patch("/sessions/{session_id}")
+def update_session(
+    session_id: int,
+    payload: AttendanceSessionUpdate,
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    item = AttendanceSessionService(db).update(session_id, payload)
+    return ok(AttendanceSessionOut.model_validate(item).model_dump(mode="json"), "Attendance session updated")
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(
+    session_id: int,
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    AttendanceSessionService(db).delete(session_id)
+    return ok(message="Attendance session deleted")
 
 
 @router.post("/sessions/{session_id}/recognize")

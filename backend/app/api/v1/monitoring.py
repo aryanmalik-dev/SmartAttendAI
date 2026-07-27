@@ -17,13 +17,13 @@ def live_session(session_id: int, db: Session = Depends(get_db)):
     session = db.get(AttendanceSession, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    present = len(session.records)
+    present = len(session.attendance_records)
     started = datetime.combine(session.session_date, session.start_time).replace(tzinfo=timezone.utc)
     duration = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
-    avg_confidence = round(sum((r.confidence or 0) for r in session.records) / max(present, 1), 3)
+    avg_confidence = round(sum((r.confidence or 0) for r in session.attendance_records) / max(present, 1), 3)
     return ok({
         "session_id": session.id,
-        "course_id": session.course_id,
+        "subject_assignment_id": session.subject_assignment_id,
         "classroom_id": session.classroom_id,
         "status": session.status.value,
         "detected_students": present,
