@@ -17,7 +17,9 @@ def get_accessible_student(db: Session, student_id: int, user: User) -> Student:
     student = db.get(Student, student_id)
     if not student:
         raise HTTPException(404, "Student not found")
-    if user.role in {UserRole.ADMIN, UserRole.FACULTY}:
+    roles = {assignment.role for assignment in user.roles}
+
+    if UserRole.ADMIN in roles or UserRole.FACULTY in roles:
         return student
     if student.user_id != user.id:
         raise HTTPException(403, "Insufficient permissions")

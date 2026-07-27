@@ -2,29 +2,12 @@ from datetime import date, datetime, time
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.enums import AttendanceSource, AttendanceStatus, SessionStatus, UserRole
+from app.schemas.auth import LoginUserOut
 
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-
-class UserOut(ORMModel):
-    id: int
-    email: EmailStr
-    full_name: str
-    role: UserRole
-    is_active: bool
-
-
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserOut
-
-
-class LoginIn(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8)
 
 
 class DepartmentIn(BaseModel):
@@ -57,7 +40,7 @@ class FacultyOut(ORMModel):
     department_id: int
     designation: str | None
     phone: str | None
-    user: UserOut
+    user: LoginUserOut
 
 
 class StudentIn(BaseModel):
@@ -78,7 +61,7 @@ class StudentOut(ORMModel):
     phone: str | None
     guardian_email: EmailStr | None
     low_attendance_threshold: float
-    user: UserOut
+    user: LoginUserOut
 
 
 class CourseIn(BaseModel):

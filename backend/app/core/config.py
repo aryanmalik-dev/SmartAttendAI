@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from: str = "noreply@smartattend.local"
+    frontend_url: str = "http://localhost:5173"
+    refresh_token_expire_days: int = 30
+    activation_token_expire_hours: int = 24
+    reset_token_expire_hours: int = 1
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

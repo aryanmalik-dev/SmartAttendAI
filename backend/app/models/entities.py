@@ -82,9 +82,18 @@ class User(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     attendance_records_marked: Mapped[list[AttendanceRecord]] = relationship(
         foreign_keys="AttendanceRecord.marked_by_id",
         back_populates="marked_by",
+    )
+
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user"
     )
 
 
@@ -540,7 +549,9 @@ class Notification(Base, TimestampMixin):
     message: Mapped[str] = mapped_column(Text)
     status: Mapped[NotificationStatus] = mapped_column(Enum(NotificationStatus), default=NotificationStatus.PENDING)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    user: Mapped[User | None] = relationship()
+    user: Mapped["User"] = relationship(
+        back_populates="notifications",
+    )
 
 
 class SystemSetting(Base, TimestampMixin):
@@ -568,6 +579,7 @@ class ActivationToken(Base, TimestampMixin):
     )
 
     expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
     )
 
@@ -578,4 +590,35 @@ class ActivationToken(Base, TimestampMixin):
 
     user: Mapped[User] = relationship(
         back_populates="activation_tokens",
+    )
+
+
+class PasswordResetToken(Base, TimestampMixin):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    token: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    used: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship(
+        back_populates="password_reset_tokens"
     )
