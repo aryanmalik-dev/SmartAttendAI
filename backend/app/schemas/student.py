@@ -10,7 +10,7 @@ class StudentCreate(BaseModel):
 
     full_name: str
     admission_no: str = Field(alias="student_number")
-    roll_no: str | None = None
+    roll_no: str
     date_of_birth: date | None = None
     student_mobile: str | None = None
     father_mobile: str | None = None

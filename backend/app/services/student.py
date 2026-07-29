@@ -55,7 +55,16 @@ class StudentService:
         if exclude_id is not None:
             stmt = stmt.where(Student.id != exclude_id)
         if self.db.scalar(stmt):
-            raise HTTPException(status_code=400, detail="Student number already exists")
+            raise HTTPException(status_code=400, detail="Student admission number already exists")
+
+    def _validate_unique_roll_no(self, roll_no: str, exclude_id: int | None = None) -> None:
+        if not roll_no or not roll_no.strip():
+            raise HTTPException(status_code=400, detail="Roll number is required")
+        stmt = select(Student).where(Student.roll_no == roll_no.strip())
+        if exclude_id is not None:
+            stmt = stmt.where(Student.id != exclude_id)
+        if self.db.scalar(stmt):
+            raise HTTPException(status_code=400, detail=f"Roll number '{roll_no}' already exists")
 
     def _validate_course(self, course_id: int) -> Course:
         course = self.db.get(Course, course_id)
@@ -87,6 +96,7 @@ class StudentService:
 
     def create_student(self, data: StudentCreate) -> Student:
         self._validate_unique_student_number(data.admission_no)
+        self._validate_unique_roll_no(data.roll_no)
         email = self._student_email(data.admission_no)
         self._validate_unique_email(email)
         department = self._validate_department(data.department_id)
@@ -205,6 +215,8 @@ class StudentService:
         if "student_mobile" in values:
             student.student_mobile = values["student_mobile"]
             student.phone = values["student_mobile"]
+        if "roll_no" in values and values["roll_no"]:
+            self._validate_unique_roll_no(values["roll_no"], exclude_id=student.id)
         for key, value in values.items():
             setattr(student, key, value)
         if "course_id" in values or "department_id" in values:
@@ -265,7 +277,13 @@ class StudentService:
         ]
         return template_excel_bytes(headers, "students_template") if file_format == "xlsx" else template_csv_bytes(headers)
 
-    def import_file(self, file: UploadFile, user: User) -> dict:
+    def import_file(
+        self,
+        file: UploadFile,
+        user: User,
+        department_id: int | None = None,
+        course_id: int | None = None,
+    ) -> dict:
         df = read_upload_dataframe(file)
         required = [
             "admission_no",
@@ -288,7 +306,21 @@ class StudentService:
         errors: list[dict] = []
         seen_emails: set[str] = set()
         seen_numbers: set[str] = set()
-        _, department, course = self._faculty_scope(user)
+        seen_roll_nos: set[str] = set()
+
+        default_dept = None
+        default_crs = None
+
+        if department_id is not None and course_id is not None:
+            default_dept = self._validate_department(department_id)
+            default_crs = self._validate_course(course_id)
+            if default_dept.course_id != default_crs.id:
+                raise HTTPException(status_code=400, detail="Department does not belong to the selected course")
+        else:
+            try:
+                _, default_dept, default_crs = self._faculty_scope(user)
+            except Exception:
+                pass
 
         def _clean(value: object) -> str:
             if pd.isna(value):
@@ -306,10 +338,27 @@ class StudentService:
         for index, row in df.fillna("").iterrows():
             row_number = index + 2
             try:
+                row_dept_id = _clean(row.get("department_id"))
+                row_crs_id = _clean(row.get("course_id"))
+
+                target_dept = default_dept
+                target_crs = default_crs
+
+                if row_dept_id:
+                    target_dept = self._validate_department(int(row_dept_id))
+                if row_crs_id:
+                    target_crs = self._validate_course(int(row_crs_id))
+
+                if not target_dept or not target_crs:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Missing course/department context. Select a Course & Department in UI or provide 'course_id' and 'department_id' in Excel."
+                    )
+
                 data = StudentCreate.model_validate(
                     {
                         "admission_no": _clean(row.get("admission_no") or row.get("student_number")),
-                        "roll_no": _clean(row.get("roll_no")) or None,
+                        "roll_no": _clean(row.get("roll_no")),
                         "full_name": _clean(row["full_name"]),
                         "date_of_birth": _parse_optional_date(row.get("date_of_birth")),
                         "student_mobile": _clean(row.get("student_mobile") or row.get("phone")) or None,
@@ -319,30 +368,35 @@ class StudentService:
                         "section": str(row["section"]).strip(),
                         "batch": str(row["batch"]).strip(),
                         "guardian_email": _clean(row.get("guardian_email")) or None,
-                        "department_id": department.id,
-                        "course_id": course.id,
+                        "department_id": target_dept.id,
+                        "course_id": target_crs.id,
                     }
                 )
                 email = self._student_email(data.admission_no)
                 if email in seen_emails or data.admission_no in seen_numbers:
-                    raise HTTPException(status_code=400, detail="Duplicate student")
+                    raise HTTPException(status_code=400, detail=f"Duplicate admission number '{data.admission_no}' in import file")
+                if data.roll_no in seen_roll_nos:
+                    raise HTTPException(status_code=400, detail=f"Duplicate roll number '{data.roll_no}' in import file")
+
                 self._validate_unique_email(email)
                 self._validate_unique_student_number(data.admission_no)
-                user = User(
+                self._validate_unique_roll_no(data.roll_no)
+
+                new_user = User(
                     email=email,
                     full_name=data.full_name,
                     password_hash=None,
                     is_active=False,
                     email_verified=False,
                 )
-                self.db.add(user)
+                self.db.add(new_user)
                 self.db.flush()
-                self.db.add(UserRoleAssignment(user_id=user.id, role=UserRole.STUDENT))
+                self.db.add(UserRoleAssignment(user_id=new_user.id, role=UserRole.STUDENT))
                 self.db.add(
                     Student(
-                        user_id=user.id,
+                        user_id=new_user.id,
                         student_number=data.admission_no,
-                        roll_no=data.roll_no or None,
+                        roll_no=data.roll_no,
                         date_of_birth=data.date_of_birth,
                         student_mobile=data.student_mobile,
                         father_mobile=data.father_mobile,
@@ -360,6 +414,7 @@ class StudentService:
                 inserted += 1
                 seen_emails.add(email)
                 seen_numbers.add(data.admission_no)
+                seen_roll_nos.add(data.roll_no)
             except Exception as exc:  # noqa: BLE001
                 self.db.rollback()
                 failed += 1

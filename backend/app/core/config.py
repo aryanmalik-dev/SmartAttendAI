@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     face_provider: str = "CPUExecutionProvider"
     face_similarity_threshold: float = 0.58
     face_detection_size: int = 640
+    face_max_embeddings_per_student: int = 5
     face_upload_root: Path = Path("storage/face_uploads")
     smtp_host: str = "localhost"
     smtp_port: int = 1025

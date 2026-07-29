@@ -57,7 +57,20 @@ export function AppShell() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const visibleNav = useMemo(() => nav.filter((item) => user && item.roles.some((role) => user.roles.includes(role))), [user]);
+  const visibleNav = useMemo(() => {
+    if (!user) return [];
+    return nav
+      .filter((item) => item.roles.some((role) => user.roles.includes(role)))
+      .map((item) => {
+        if (item.to === "/students") {
+          let label = "Students";
+          if (user.roles.includes("admin")) label = "Manage Students";
+          else if (user.roles.includes("faculty")) label = "Classes";
+          return { ...item, label };
+        }
+        return item;
+      });
+  }, [user]);
 
   useEffect(() => {
     stopAllWebcams();

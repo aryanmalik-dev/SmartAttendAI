@@ -9,7 +9,7 @@ from app.models.enums import UserRole
 
 
 def seed(db: Session) -> None:
-    if db.scalar(select(User).where(User.email == "admin@smartattend.edu")):
+    if db.scalar(select(User).where(User.email == "admin@smartattend.ai")):
         return
     btech = Course(name="Bachelor of Technology", abbreviation="BTech", duration_years=4, is_active=True)
     db.add(btech)
@@ -20,9 +20,9 @@ def seed(db: Session) -> None:
     db.add_all([cse, ece])
     db.flush()
 
-    admin = User(email="admin@smartattend.edu", full_name="System Admin", password_hash=hash_password("Admin@12345"), is_active=True, email_verified=True)
-    faculty_user = User(email="faculty@smartattend.edu", full_name="Dr. Asha Rao", password_hash=hash_password("Faculty@12345"), is_active=True, email_verified=True)
-    student_user = User(email="student@smartattend.edu", full_name="Riya Sharma", password_hash=hash_password("Student@12345"), is_active=True, email_verified=True)
+    admin = User(email="admin@smartattend.ai", full_name="System Admin", password_hash=hash_password("Admin@123"), is_active=True, email_verified=True)
+    faculty_user = User(email="faculty@smartattend.ai", full_name="Dr. Asha Rao", password_hash=hash_password("Faculty@123"), is_active=True, email_verified=True)
+    student_user = User(email="student@smartattend.ai", full_name="Riya Sharma", password_hash=hash_password("Student@123"), is_active=True, email_verified=True)
     db.add_all([admin, faculty_user, student_user])
     db.flush()
     db.add_all([

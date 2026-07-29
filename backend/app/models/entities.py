@@ -155,8 +155,11 @@ class Student(Base):
         nullable=False,
     )
 
-    roll_no: Mapped[str | None] = mapped_column(
+    roll_no: Mapped[str] = mapped_column(
         String(60),
+        unique=True,
+        index=True,
+        nullable=False,
     )
 
     date_of_birth: Mapped[date | None] = mapped_column(

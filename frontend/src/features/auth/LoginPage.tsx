@@ -18,7 +18,7 @@ export function LoginPage() {
   const [toast, setToast] = useState<string | null>(null);
   const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "admin@smartattend.edu", password: "Admin@12345" }
+    defaultValues: { email: "admin@smartattend.ai", password: "Admin@123" }
   });
   if (user) return <Navigate to="/" replace />;
   return (
@@ -53,7 +53,7 @@ export function LoginPage() {
           <label className="mb-4 block text-sm font-semibold text-slate-700">Email<Input className="mt-2" {...register("email")} /></label>
           <label className="mb-6 block text-sm font-semibold text-slate-700">Password<Input className="mt-2" type="password" {...register("password")} /></label>
           <Button className="w-full" disabled={formState.isSubmitting}>Sign in</Button>
-          <p className="mt-4 text-xs text-slate-500">Seed users: admin@smartattend.edu, faculty@smartattend.edu, student@smartattend.edu</p>
+          <p className="mt-4 text-xs text-slate-500">Seed users: admin@smartattend.ai, faculty@smartattend.ai, student@smartattend.ai</p>
         </form>
       </section>
       <Toast message={toast} />

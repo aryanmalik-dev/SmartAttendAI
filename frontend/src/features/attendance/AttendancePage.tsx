@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, CameraOff, CirclePlay, CircleStop, Plus, RefreshCw, Save, Search, ShieldCheck, Video } from "lucide-react";
+import { AlertTriangle, Camera, CameraOff, CheckCircle2, CirclePlay, CircleStop, Info, Plus, RefreshCw, Save, Search, ShieldCheck, Upload, Video } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import {
   stopLiveAttendance,
   submitLiveAttendanceFrame
 } from "../../lib/api";
+import type { LiveFaceMatch } from "../../lib/types";
 import { registerWebcamStop } from "../../lib/webcam";
 
 type ClassroomOption = { id: number; name: string; building: string };
@@ -82,6 +83,7 @@ export function AttendancePage() {
   const [streamReady, setStreamReady] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [frameBusy, setFrameBusy] = useState(false);
+  const [lastMatches, setLastMatches] = useState<LiveFaceMatch[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -213,11 +215,29 @@ export function AttendancePage() {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
       if (!blob) return;
       const imageBase64 = await toBase64(blob);
-      await submitLiveAttendanceFrame(selectedSessionId, imageBase64);
+      const res = await submitLiveAttendanceFrame(selectedSessionId, imageBase64);
+      if (res?.matches) setLastMatches(res.matches);
       queryClient.invalidateQueries({ queryKey: ["live-attendance-stats", selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ["attendance-records", selectedSessionId] });
     } catch {
       setToast("Frame processing failed");
+    } finally {
+      setFrameBusy(false);
+    }
+  }
+
+  async function handleUploadPhoto(file: File) {
+    if (!selectedSessionId || frameBusy) return;
+    setFrameBusy(true);
+    try {
+      const imageBase64 = await toBase64(file);
+      const res = await submitLiveAttendanceFrame(selectedSessionId, imageBase64);
+      if (res?.matches) setLastMatches(res.matches);
+      await queryClient.invalidateQueries({ queryKey: ["live-attendance-stats", selectedSessionId] });
+      await queryClient.invalidateQueries({ queryKey: ["attendance-records", selectedSessionId] });
+      setToast("Classroom photo processed successfully");
+    } catch {
+      setToast("Classroom photo processing failed");
     } finally {
       setFrameBusy(false);
     }
@@ -241,8 +261,10 @@ export function AttendancePage() {
     stopCamera();
   }
 
+  const [autoScanEnabled, setAutoScanEnabled] = useState(false);
+
   useEffect(() => {
-    if (cameraActive && selectedSessionId) {
+    if (cameraActive && selectedSessionId && autoScanEnabled) {
       intervalRef.current = window.setInterval(() => {
         void captureFrame();
       }, 2500);
@@ -253,7 +275,7 @@ export function AttendancePage() {
         intervalRef.current = null;
       }
     };
-  }, [cameraActive, selectedSessionId]);
+  }, [cameraActive, selectedSessionId, autoScanEnabled]);
 
   useEffect(() => {
     const unregister = registerWebcamStop(stopCamera);
@@ -368,43 +390,82 @@ export function AttendancePage() {
             )}
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="button" onClick={() => void startLive()} disabled={!selectedSessionId || cameraActive}>
-                <CirclePlay size={16} />
-                Start Webcam
-              </Button>
-              <Button type="button" onClick={() => void stopLive()} disabled={!selectedSessionId} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <CircleStop size={16} />
-                Stop Webcam
-              </Button>
-              <Button type="button" onClick={() => void startCamera()} disabled={cameraActive} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              <Button type="button" onClick={() => void startCamera()} disabled={cameraActive}>
                 <Camera size={16} />
-                Open Camera
+                {cameraActive ? "Camera Active" : "Start Webcam"}
               </Button>
               <Button type="button" onClick={stopCamera} disabled={!cameraActive} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
                 <CameraOff size={16} />
-                Close Camera
+                Stop Webcam
               </Button>
             </div>
           </Card>
 
-          <Card className="space-y-3">
+          <Card className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-950">Recognition Control</h3>
-              <span className="text-xs text-slate-500">{frameBusy ? "Processing frame..." : streamReady ? "Camera active" : "Camera idle"}</span>
+              <h3 className="text-base font-semibold text-slate-950">Recognition & Photo Processing</h3>
+              <span className="text-xs font-semibold text-slate-500">
+                {frameBusy ? "Processing frame..." : streamReady ? (autoScanEnabled ? "Auto-Scanning Active" : "Webcam Ready (Manual Snap)") : "Camera Idle"}
+              </span>
             </div>
-            <video ref={videoRef} autoPlay playsInline className="aspect-video w-full rounded-md bg-slate-900 object-cover" />
+
+            {/* Video Feed Preview */}
+            <video ref={videoRef} autoPlay playsInline className="aspect-video w-full rounded-lg bg-slate-900 object-cover shadow-inner" />
             <canvas ref={canvasRef} className="hidden" />
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => void captureFrame()} disabled={!cameraActive || !selectedSessionId || frameBusy}>
-                <Video size={16} />
-                Process Frame
-              </Button>
-              <Button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["live-attendance-stats", selectedSessionId] })} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <RefreshCw size={16} />
-                Refresh Stats
-              </Button>
+
+            {/* Ingestion & Snap Control Actions */}
+            <div className="space-y-3 border-t border-slate-100 pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => void captureFrame()}
+                    disabled={!cameraActive || !selectedSessionId || frameBusy}
+                    className="bg-brand-600 text-white hover:bg-brand-700 font-semibold"
+                  >
+                    <Camera size={16} />
+                    Snap & Process Photo
+                  </Button>
+
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
+                    <Upload size={16} />
+                    Upload Classroom Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        await handleUploadPhoto(file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <Button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["live-attendance-stats", selectedSessionId] })} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                  <RefreshCw size={16} />
+                  Refresh Stats
+                </Button>
+              </div>
+
+              {/* Auto-Scan Stream Toggle Switch */}
+              <div className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 border border-slate-200">
+                <input
+                  type="checkbox"
+                  id="autoScanToggle"
+                  checked={autoScanEnabled}
+                  onChange={(e) => setAutoScanEnabled(e.target.checked)}
+                  disabled={!cameraActive || !selectedSessionId}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer disabled:opacity-50"
+                />
+                <label htmlFor="autoScanToggle" className="cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                  Enable Continuous Auto-Scan Stream (Captures frame every 2.5s automatically)
+                </label>
+              </div>
             </div>
-            <p className="text-xs text-slate-500">The camera stops automatically on navigation and logout.</p>
+            <p className="text-xs text-slate-500">Note: Manual photo snap is recommended for full control. Continuous auto-scan can be toggled on/off as needed.</p>
           </Card>
         </div>
 
@@ -466,21 +527,91 @@ export function AttendancePage() {
             </form>
           </Card>
 
-          <Card>
-            <h3 className="text-base font-semibold text-slate-950">Recent Records</h3>
-            <div className="mt-4 space-y-3">
+          <Card className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-950">Recent Activity & Detections</h3>
+              {lastMatches.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                  Last Photo: {lastMatches.length} Face{lastMatches.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
+            {/* Display Latest Photo/Frame Face Matches (including Unknown Faces) */}
+            {lastMatches.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Latest Photo Recognition Feedback</p>
+                <div className="space-y-2">
+                  {lastMatches.map((match, idx) => {
+                    if (match.status === "unknown") {
+                      return (
+                        <div key={`match-${idx}`} className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 shadow-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1.5 font-bold text-xs uppercase tracking-wide text-amber-800">
+                              <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                              Unknown Face Detected
+                            </span>
+                            <span className="rounded bg-amber-200/80 px-2 py-0.5 text-xs font-bold text-amber-900">
+                              Similarity: {(match.confidence * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-medium text-amber-700">
+                            Unrecognized face in classroom frame (Below 58% similarity threshold). No student matched.
+                          </p>
+                        </div>
+                      );
+                    }
+                    if (match.status === "duplicate") {
+                      return (
+                        <div key={`match-${idx}`} className="rounded-md border border-blue-200 bg-blue-50 p-2.5 text-blue-900">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1.5 font-semibold text-xs text-blue-800">
+                              <Info size={14} className="text-blue-600 shrink-0" />
+                              {match.student_name ?? `Student #${match.student_id}`}
+                            </span>
+                            <span className="text-xs text-blue-700 font-medium">
+                              Duplicate (Already Present)
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={`match-${idx}`} className="rounded-md border border-emerald-200 bg-emerald-50 p-2.5 text-emerald-900">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 font-bold text-xs text-emerald-800">
+                            <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                            {match.student_name ?? `Student #${match.student_id}`}
+                          </span>
+                          <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-xs font-bold text-emerald-900">
+                            Match: {(match.confidence * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-emerald-700 font-medium">Marked PRESENT via AI Face Recognition</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Saved Attendance Roster Records */}
+            <div className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Saved Roster Records</p>
               {(recordsQuery.data?.items ?? []).slice(0, 8).map((record) => (
                 <div key={record.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-slate-900">Student #{record.student_id}</p>
-                    <span className="text-xs text-slate-500">{record.status}</span>
+                    <p className="text-sm font-semibold text-slate-900">Student #{record.student_id}</p>
+                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase text-slate-700">{record.status}</span>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Confidence {record.confidence ?? 0} · {new Date(record.marked_at).toLocaleString()}
+                    Confidence: {record.confidence != null ? `${(Number(record.confidence) * 100).toFixed(1)}%` : "Manual"} · {new Date(record.marked_at).toLocaleTimeString()}
                   </p>
                 </div>
               ))}
-              {(recordsQuery.data?.items.length ?? 0) === 0 && <p className="text-sm text-slate-500">No attendance records yet.</p>}
+              {(recordsQuery.data?.items.length ?? 0) === 0 && lastMatches.length === 0 && (
+                <p className="text-sm text-slate-500">No attendance records or face detections yet.</p>
+              )}
             </div>
           </Card>
         </div>

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
+from app.core.config import get_settings
 from app.core.responses import ok
 from app.db.session import get_db
 from app.models.entities import FaceEmbedding, Student, User
@@ -23,20 +24,21 @@ def get_accessible_student(db: Session, student_id: int, user: User) -> Student:
     if UserRole.ADMIN in roles or UserRole.FACULTY in roles:
         return student
     if student.user_id != user.id:
-        raise HTTPException(403, "Insufficient permissions")
+        raise HTTPException(403, "Forbidden")
     return student
 
 
 @router.get("/me")
-def my_profile(user: User = Depends(require_roles(UserRole.STUDENT)), db: Session = Depends(get_db)):
+def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     student = db.scalar(select(Student).where(Student.user_id == user.id))
     if not student:
         raise HTTPException(404, "Student profile not found")
+
     return ok(
         {
             "student_id": student.id,
-            "admission_no": student.admission_no,
             "student_number": student.student_number,
+            "admission_no": student.admission_no,
             "full_name": student.full_name,
             "email": student.email,
             "roll_no": student.roll_no,
@@ -51,6 +53,21 @@ def my_profile(user: User = Depends(require_roles(UserRole.STUDENT)), db: Sessio
 @router.post("/{student_id}/faces")
 async def enroll_faces(student_id: int, files: list[UploadFile] = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     get_accessible_student(db, student_id, user)
+    settings = get_settings()
+
+    existing_active = db.scalar(
+        select(func.count(FaceEmbedding.id)).where(
+            FaceEmbedding.student_id == student_id,
+            FaceEmbedding.is_active.is_(True)
+        )
+    ) or 0
+
+    if existing_active + len(files) > settings.face_max_embeddings_per_student:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot exceed {settings.face_max_embeddings_per_student} active face embeddings (currently has {existing_active}). Use re-enrollment to replace existing faces."
+        )
+
     provider = get_face_provider()
     created = 0
     saved_paths: list[str] = []

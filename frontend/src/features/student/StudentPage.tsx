@@ -1,6 +1,26 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ArrowUpDown, Camera, CameraOff, FileSpreadsheet, PencilLine, Plus, RefreshCw, Upload, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
+  BookOpen,
+  Building2,
+  Camera,
+  CameraOff,
+  ChevronRight,
+  FileSpreadsheet,
+  GraduationCap,
+  Layers,
+  PencilLine,
+  Plus,
+  RefreshCw,
+  Upload,
+  UserCheck,
+  Users,
+  X
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -48,10 +68,14 @@ type CourseOption = {
   is_active: boolean;
 };
 
-type FacultyProfile = {
+type SubjectAssignmentOption = {
   id: number;
-  employee_id: string;
-  department_id: number;
+  faculty_id: number;
+  subject_id: number;
+  section: string;
+  academic_year: string;
+  faculty?: { id: number; employee_id: string; user?: { id: number; full_name: string; email: string } };
+  subject?: { id: number; code: string; name: string; course_id: number; department_id: number };
 };
 
 type OwnStudent = {
@@ -97,7 +121,7 @@ type StudentCreateFormValues = z.infer<typeof studentCreateSchema>;
 
 const studentEditSchema = z.object({
   full_name: z.string().min(2, "Enter the student's full name"),
-  roll_no: z.string().optional(),
+  roll_no: z.string().min(1, "Enter a roll number"),
   date_of_birth: z.string().optional(),
   student_mobile: z.string().optional(),
   father_mobile: z.string().optional(),
@@ -112,9 +136,9 @@ type StudentEditFormValues = z.infer<typeof studentEditSchema>;
 function errorMessage(error: unknown) {
   if (typeof error === "object" && error && "response" in error) {
     const response = (error as { response?: { data?: { detail?: string; message?: string } } }).response;
-    return response?.data?.detail ?? response?.data?.message ?? "Face enrollment failed";
+    return response?.data?.detail ?? response?.data?.message ?? "Operation failed";
   }
-  return "Face enrollment failed";
+  return "Operation failed";
 }
 
 function studentName(student: StudentSummary) {
@@ -125,15 +149,20 @@ function StudentCreateModal({
   open,
   onClose,
   onSuccess,
-  isFaculty
+  defaultCourseId,
+  defaultDepartmentId,
+  defaultSection
 }: {
   open: boolean;
   onClose: () => void;
   onSuccess: (message: string) => void;
-  isFaculty: boolean;
+  defaultCourseId?: number | null;
+  defaultDepartmentId?: number | null;
+  defaultSection?: string | null;
 }) {
   const queryClient = useQueryClient();
-  const [toast, setToast] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const form = useForm<StudentCreateFormValues>({
     resolver: zodResolver(studentCreateSchema),
     defaultValues: {
@@ -142,10 +171,12 @@ function StudentCreateModal({
       date_of_birth: "",
       student_mobile: "",
       father_mobile: "",
+      course_id: defaultCourseId ?? undefined,
+      department_id: defaultDepartmentId ?? undefined,
       enrollment_year: new Date().getFullYear(),
       semester: 1,
-      section: "",
-      batch: "",
+      section: defaultSection ?? "",
+      batch: `${new Date().getFullYear()}-${new Date().getFullYear() + 4}`,
     }
   });
 
@@ -154,15 +185,11 @@ function StudentCreateModal({
     queryFn: () => listResource<CourseOption>("/courses", { p: 1, size: 100 }),
     enabled: open
   });
+
   const departmentsQuery = useQuery({
     queryKey: ["student-create-departments"],
     queryFn: () => listResource<DepartmentOption>("/departments", { p: 1, size: 100 }),
     enabled: open
-  });
-  const facultyQuery = useQuery({
-    queryKey: ["student-create-faculty"],
-    queryFn: async () => (await api.get("/faculty/me")).data.data as FacultyProfile,
-    enabled: open && isFaculty
   });
 
   const selectedCourseId = form.watch("course_id");
@@ -173,23 +200,14 @@ function StudentCreateModal({
     return departments.filter((department) => department.course_id === selectedCourseId);
   }, [departmentsQuery.data?.items, selectedCourseId]);
 
-  const facultyDepartment = useMemo(() => {
-    if (!facultyQuery.data) return null;
-    return (departmentsQuery.data?.items ?? []).find((department) => department.id === facultyQuery.data.department_id) ?? null;
-  }, [departmentsQuery.data?.items, facultyQuery.data]);
-
-  const facultyCourse = useMemo(() => {
-    if (!facultyDepartment?.course_id) return null;
-    return (coursesQuery.data?.items ?? []).find((course) => course.id === facultyDepartment.course_id) ?? null;
-  }, [coursesQuery.data?.items, facultyDepartment?.course_id]);
-
   useEffect(() => {
-    if (!isFaculty || !facultyDepartment) return;
-    form.setValue("department_id", facultyDepartment.id, { shouldValidate: true, shouldDirty: false });
-    if (facultyDepartment.course_id) {
-      form.setValue("course_id", facultyDepartment.course_id, { shouldValidate: true, shouldDirty: false });
+    if (open) {
+      if (defaultCourseId) form.setValue("course_id", defaultCourseId);
+      if (defaultDepartmentId) form.setValue("department_id", defaultDepartmentId);
+      if (defaultSection) form.setValue("section", defaultSection);
+      setErrorMsg(null);
     }
-  }, [facultyDepartment, form, isFaculty]);
+  }, [defaultCourseId, defaultDepartmentId, defaultSection, form, open]);
 
   const createStudent = useMutation({
     mutationFn: async (values: StudentCreateFormValues) => {
@@ -204,161 +222,127 @@ function StudentCreateModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
-      setToast("Student created");
-      onSuccess("Student created");
+      onSuccess("Student created successfully");
       onClose();
-      form.reset({
-        admission_no: "",
-        roll_no: "",
-        date_of_birth: "",
-        student_mobile: "",
-        father_mobile: "",
-        enrollment_year: new Date().getFullYear(),
-        semester: 1,
-        section: "",
-        batch: "",
-      });
+      form.reset();
+    },
+    onError: (err) => {
+      setErrorMsg(errorMessage(err));
     }
   });
 
-  useEffect(() => {
-    if (!open) {
-      form.reset({
-        admission_no: "",
-        roll_no: "",
-        date_of_birth: "",
-        student_mobile: "",
-        father_mobile: "",
-        enrollment_year: new Date().getFullYear(),
-        semester: 1,
-        section: "",
-        batch: "",
-      });
-      setToast(null);
-    }
-  }, [form, open]);
-
   const admissionNo = form.watch("admission_no");
   const generatedEmail = admissionNo ? `${admissionNo}@imsec.ac.in` : "";
-  const facultyScopeReady = !isFaculty || Boolean(facultyDepartment && facultyCourse);
 
   return (
-    <Modal title="Create Student" open={open} onClose={onClose}>
+    <Modal title="Add New Student (Admin Only)" open={open} onClose={onClose}>
       <form
         className="grid gap-4 sm:grid-cols-2"
         onSubmit={form.handleSubmit((values) => {
+          setErrorMsg(null);
           createStudent.mutate(values);
         })}
       >
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Full Name</span>
-          <Input {...form.register("full_name")} />
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Full Name *</span>
+          <Input {...form.register("full_name")} placeholder="e.g. Rahul Verma" />
+          {form.formState.errors.full_name && <span className="text-xs text-red-600">{form.formState.errors.full_name.message}</span>}
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Admission No.</span>
-          <Input {...form.register("admission_no")} />
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Admission No. (Unique) *</span>
+          <Input {...form.register("admission_no")} placeholder="e.g. ADM2024001" />
+          {form.formState.errors.admission_no && <span className="text-xs text-red-600">{form.formState.errors.admission_no.message}</span>}
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Roll No.</span>
-          <Input {...form.register("roll_no")} />
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Roll No. (Unique) *</span>
+          <Input {...form.register("roll_no")} placeholder="e.g. 2100320100045" />
+          {form.formState.errors.roll_no && <span className="text-xs text-red-600">{form.formState.errors.roll_no.message}</span>}
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Date of Birth</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Date of Birth *</span>
           <Input type="date" {...form.register("date_of_birth")} />
+          {form.formState.errors.date_of_birth && <span className="text-xs text-red-600">{form.formState.errors.date_of_birth.message}</span>}
         </label>
-        {isFaculty ? (
-          <div className="sm:col-span-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Department</p>
-                <p className="mt-1 font-medium text-slate-900">
-                  {facultyDepartment ? `${facultyDepartment.abbreviation} - ${facultyDepartment.name}` : "Loading..."}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs uppercase tracking-wide text-slate-400">Course</p>
-                <p className="mt-1 font-medium text-slate-900">
-                  {facultyCourse ? `${facultyCourse.abbreviation} - ${facultyCourse.name}` : "Loading..."}
-                </p>
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">Department and course are inherited from your faculty profile.</p>
-          </div>
-        ) : (
-          <>
-            <label className="block text-sm font-medium text-slate-700">
-              <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Course</span>
-              <select {...form.register("course_id")} className="focus-ring w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
-                <option value="">Select course</option>
-                {coursesQuery.data?.items.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.abbreviation} - {course.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Department</span>
-              <select {...form.register("department_id")} className="focus-ring w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
-                <option value="">{selectedCourseId ? "Select department for course" : "Select department"}</option>
-                {filteredDepartments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.abbreviation} - {department.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        )}
-        {isFaculty && (
-          <>
-            <input type="hidden" {...form.register("course_id")} />
-            <input type="hidden" {...form.register("department_id")} />
-          </>
-        )}
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Enrollment Year</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Course *</span>
+          <select {...form.register("course_id")} className="focus-ring w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="">Select course</option>
+            {coursesQuery.data?.items.map((course) => (
+              <option key={course.id} value={course.id}>
+                {course.abbreviation} - {course.name}
+              </option>
+            ))}
+          </select>
+          {form.formState.errors.course_id && <span className="text-xs text-red-600">{form.formState.errors.course_id.message}</span>}
+        </label>
+
+        <label className="block text-sm font-medium text-slate-700">
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Department *</span>
+          <select {...form.register("department_id")} className="focus-ring w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="">{selectedCourseId ? "Select department" : "Select department"}</option>
+            {filteredDepartments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.abbreviation} - {department.name}
+              </option>
+            ))}
+          </select>
+          {form.formState.errors.department_id && <span className="text-xs text-red-600">{form.formState.errors.department_id.message}</span>}
+        </label>
+
+        <label className="block text-sm font-medium text-slate-700">
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Enrollment Year *</span>
           <Input type="number" {...form.register("enrollment_year")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Semester</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Semester *</span>
           <Input type="number" {...form.register("semester")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Section</span>
-          <Input {...form.register("section")} />
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Section *</span>
+          <Input {...form.register("section")} placeholder="e.g. A" />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Batch</span>
-          <Input {...form.register("batch")} />
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Batch *</span>
+          <Input {...form.register("batch")} placeholder="e.g. 2024-2028" />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Student Mobile</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Student Mobile *</span>
           <Input {...form.register("student_mobile")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Father Mobile</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Father Mobile *</span>
           <Input {...form.register("father_mobile")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Generated Email</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Auto-Generated Email</span>
           <Input value={generatedEmail} readOnly className="bg-slate-50 text-slate-600" />
         </label>
+
+        {errorMsg && (
+          <div className="sm:col-span-2 rounded-md bg-red-50 p-3 text-sm font-medium text-red-700 border border-red-200">
+            {errorMsg}
+          </div>
+        )}
+
         <div className="sm:col-span-2 flex justify-end gap-3">
           <Button type="button" onClick={onClose} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
             Cancel
           </Button>
-          <Button type="submit" disabled={createStudent.isPending || coursesQuery.isLoading || departmentsQuery.isLoading || (isFaculty && !facultyScopeReady)}>
+          <Button type="submit" disabled={createStudent.isPending || coursesQuery.isLoading || departmentsQuery.isLoading}>
             {createStudent.isPending ? "Creating..." : "Create Student"}
           </Button>
         </div>
       </form>
-      {isFaculty && !facultyScopeReady && (
-        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Faculty profile is not ready yet or the department is not linked to a course.
-        </p>
-      )}
-      <Toast message={toast} />
     </Modal>
   );
 }
@@ -375,6 +359,8 @@ function StudentEditModal({
   onSuccess: (message: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const form = useForm<StudentEditFormValues>({
     resolver: zodResolver(studentEditSchema),
     defaultValues: {
@@ -403,30 +389,15 @@ function StudentEditModal({
       section: student.section ?? "",
       batch: student.batch ?? "",
     });
+    setErrorMsg(null);
   }, [form, student]);
-
-  useEffect(() => {
-    if (!open) {
-      form.reset({
-        full_name: "",
-        roll_no: "",
-        date_of_birth: "",
-        student_mobile: "",
-        father_mobile: "",
-        guardian_email: "",
-        semester: "",
-        section: "",
-        batch: "",
-      });
-    }
-  }, [form, open]);
 
   const updateStudent = useMutation({
     mutationFn: async (values: StudentEditFormValues) => {
       if (!student) return null;
       const payload = {
         full_name: values.full_name.trim(),
-        roll_no: values.roll_no?.trim() || undefined,
+        roll_no: values.roll_no.trim(),
         date_of_birth: values.date_of_birth || undefined,
         student_mobile: values.student_mobile?.trim() || undefined,
         father_mobile: values.father_mobile?.trim() || undefined,
@@ -440,8 +411,11 @@ function StudentEditModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
-      onSuccess("Student info updated");
+      onSuccess("Student record updated successfully");
       onClose();
+    },
+    onError: (err) => {
+      setErrorMsg(errorMessage(err));
     }
   });
 
@@ -449,12 +423,12 @@ function StudentEditModal({
 
   return (
     <Modal title="Edit Student Info" open={open} onClose={onClose}>
-      <form className="grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit((values) => updateStudent.mutate(values))}>
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit((values) => { setErrorMsg(null); updateStudent.mutate(values); })}>
         <div className="sm:col-span-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400">Admission No.</p>
-              <p className="mt-1 font-medium text-slate-900">{student.admission_no ?? student.student_number}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Admission No. (Immutable)</p>
+              <p className="mt-1 font-semibold text-slate-900">{student.admission_no ?? student.student_number}</p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-400">Email</p>
@@ -462,42 +436,60 @@ function StudentEditModal({
             </div>
           </div>
         </div>
+
         <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Full Name</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Full Name *</span>
           <Input {...form.register("full_name")} />
+          {form.formState.errors.full_name && <span className="text-xs text-red-600">{form.formState.errors.full_name.message}</span>}
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
-          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Roll No.</span>
+          <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Roll No. (Unique) *</span>
           <Input {...form.register("roll_no")} />
+          {form.formState.errors.roll_no && <span className="text-xs text-red-600">{form.formState.errors.roll_no.message}</span>}
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Date of Birth</span>
           <Input type="date" {...form.register("date_of_birth")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Student Mobile</span>
           <Input {...form.register("student_mobile")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Father Mobile</span>
           <Input {...form.register("father_mobile")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Guardian Email</span>
           <Input {...form.register("guardian_email")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Semester</span>
           <Input {...form.register("semester")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Section</span>
           <Input {...form.register("section")} />
         </label>
+
         <label className="block text-sm font-medium text-slate-700">
           <span className="mb-2 block text-xs uppercase tracking-wide text-slate-400">Batch</span>
           <Input {...form.register("batch")} />
         </label>
+
+        {errorMsg && (
+          <div className="sm:col-span-2 rounded-md bg-red-50 p-3 text-sm font-medium text-red-700 border border-red-200">
+            {errorMsg}
+          </div>
+        )}
+
         <div className="sm:col-span-2 flex justify-end gap-3">
           <Button type="button" onClick={onClose} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
             Cancel
@@ -625,6 +617,10 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
       setError("Add at least one face image before submitting.");
       return;
     }
+    if (items.length > 5) {
+      setError("Maximum 5 face images can be uploaded per student.");
+      return;
+    }
     enroll.mutate();
   }
 
@@ -646,6 +642,10 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
   return (
     <Modal title={`Face Enrollment - ${target?.label ?? ""}`} open={Boolean(target)} onClose={closeAndReset}>
       <div className="space-y-5">
+        <p className="text-xs font-medium text-slate-500">
+          Upload up to 5 clear face images (Front, Left 45°, Right 45°, Neutral, Smile) for optimal recognition accuracy.
+        </p>
+
         <div className="grid grid-cols-2 rounded-md bg-slate-100 p-1">
           <button type="button" onClick={() => setMode("upload")} className={`rounded px-3 py-2 text-sm font-semibold ${mode === "upload" ? "bg-white text-brand-700 shadow-sm" : "text-slate-600"}`}>Upload Images</button>
           <button type="button" onClick={() => setMode("webcam")} className={`rounded px-3 py-2 text-sm font-semibold ${mode === "webcam" ? "bg-white text-brand-700 shadow-sm" : "text-slate-600"}`}>Use Webcam</button>
@@ -705,9 +705,19 @@ export function StudentPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isStudent = Boolean(user?.roles.includes("student"));
+  const isAdmin = Boolean(user?.roles.includes("admin"));
   const isFaculty = Boolean(user?.roles.includes("faculty"));
-  const canCreateStudent = Boolean(user && (user.roles.includes("admin") || user.roles.includes("faculty")));
-  const canManageImports = isFaculty;
+
+  // Strict Permissions: Only Admin can create or import students
+  const canCreateStudent = isAdmin;
+  const canManageImports = isAdmin;
+
+  // Hierarchical Navigation States: Course -> Department -> Section
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [selectedClassCard, setSelectedClassCard] = useState<SubjectAssignmentOption | null>(null);
+
   const [target, setTarget] = useState<EnrollmentTarget | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentSummary | null>(null);
@@ -716,25 +726,87 @@ export function StudentPage() {
   const [sortField, setSortField] = useState<"roll_no" | "admission_no" | "student">("roll_no");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const pageSize = 50;
-  const own = useQuery<OwnStudent>({ queryKey: ["student-me"], queryFn: async () => (await api.get("/students/me")).data.data, enabled: isStudent });
-  const studentsParams = useMemo(() => ({
-    p: page,
-    size: pageSize,
-    sort: `${sortField}${sortDirection === "desc" ? ":desc" : ""}`
-  }), [page, sortDirection, sortField]);
-  const list = useQuery({ queryKey: ["students", studentsParams], queryFn: () => listResource<StudentSummary>("/students", studentsParams), enabled: !isStudent });
-  const departmentsQuery = useQuery({
-    queryKey: ["student-page-departments"],
-    queryFn: () => listResource<DepartmentOption>("/departments", { p: 1, size: 100 }),
-    enabled: !isStudent
+
+  const own = useQuery<OwnStudent>({
+    queryKey: ["student-me"],
+    queryFn: async () => (await api.get("/students/me")).data.data,
+    enabled: isStudent
   });
+
   const coursesQuery = useQuery({
     queryKey: ["student-page-courses"],
     queryFn: () => listResource<CourseOption>("/courses", { p: 1, size: 100 }),
     enabled: !isStudent
   });
-  const departmentById = useMemo(() => new Map((departmentsQuery.data?.items ?? []).map((department) => [department.id, department])), [departmentsQuery.data?.items]);
-  const courseById = useMemo(() => new Map((coursesQuery.data?.items ?? []).map((course) => [course.id, course])), [coursesQuery.data?.items]);
+
+  const departmentsQuery = useQuery({
+    queryKey: ["student-page-departments"],
+    queryFn: () => listResource<DepartmentOption>("/departments", { p: 1, size: 100 }),
+    enabled: !isStudent
+  });
+
+  const assignmentsQuery = useQuery({
+    queryKey: ["faculty-subject-assignments"],
+    queryFn: () => listResource<SubjectAssignmentOption>("/subject-assignments", { p: 1, size: 100 }),
+    enabled: isFaculty
+  });
+
+  const courseById = useMemo(
+    () => new Map((coursesQuery.data?.items ?? []).map((course) => [course.id, course])),
+    [coursesQuery.data?.items]
+  );
+
+  const departmentById = useMemo(
+    () => new Map((departmentsQuery.data?.items ?? []).map((department) => [department.id, department])),
+    [departmentsQuery.data?.items]
+  );
+
+  const filteredDepartments = useMemo(() => {
+    const items = departmentsQuery.data?.items ?? [];
+    if (!selectedCourseId) return items;
+    return items.filter((dept) => dept.course_id === selectedCourseId);
+  }, [departmentsQuery.data?.items, selectedCourseId]);
+
+  // Filter assignments for Faculty
+  const facultyAssignments = useMemo(() => {
+    const items = assignmentsQuery.data?.items ?? [];
+    if (!user) return [];
+    return items.filter(
+      (item) =>
+        item.faculty?.user?.id === user.id ||
+        (item.faculty?.user?.email && item.faculty.user.email.toLowerCase() === user.email.toLowerCase())
+    );
+  }, [assignmentsQuery.data?.items, user]);
+
+  // Query students filtered by active hierarchical selections
+  const studentsParams = useMemo(() => {
+    const params: Record<string, string | number> = {
+      p: page,
+      size: pageSize,
+      sort: `${sortField}${sortDirection === "desc" ? ":desc" : ""}`
+    };
+    if (selectedCourseId) params.course_id = selectedCourseId;
+    if (selectedDepartmentId) params.department_id = selectedDepartmentId;
+    if (selectedSection) params.section = selectedSection;
+    return params;
+  }, [page, selectedCourseId, selectedDepartmentId, selectedSection, sortDirection, sortField]);
+
+  const list = useQuery({
+    queryKey: ["students", studentsParams],
+    queryFn: () => listResource<StudentSummary>("/students", studentsParams),
+    enabled: !isStudent && (isAdmin ? true : Boolean(selectedSection || selectedDepartmentId))
+  });
+
+  // Extract distinct sections for the selected department
+  const availableSections = useMemo(() => {
+    if (!selectedDepartmentId) return [];
+    const items = list.data?.items ?? [];
+    const set = new Set<string>();
+    items.forEach((item) => {
+      if (item.section) set.add(item.section);
+    });
+    return Array.from(set).sort();
+  }, [list.data?.items, selectedDepartmentId]);
 
   function openEnrollment(student: EnrollmentTarget) {
     setTarget(student);
@@ -761,17 +833,27 @@ export function StudentPage() {
   async function handleImport(file: File) {
     const formData = new FormData();
     formData.append("file", file);
-    const { data } = await api.post<{ success: boolean; message: string; data: { inserted: number; failed: number; errors: { row: number; errors: string[] }[] } }>(
-      "/students/import",
-      formData,
-      { headers: { "Content-Type": "multipart/form-data" } }
-    );
-    await queryClient.invalidateQueries({ queryKey: ["students"] });
-    await queryClient.refetchQueries({ queryKey: ["students"] });
-    const inserted = data.data.inserted ?? 0;
-    const failed = data.data.failed ?? 0;
-    setToast(`Students import completed: ${inserted} inserted, ${failed} failed`);
+    const params: Record<string, string | number> = {};
+    if (selectedDepartmentId) params.department_id = selectedDepartmentId;
+    if (selectedCourseId) params.course_id = selectedCourseId;
+
+    try {
+      const { data } = await api.post<{ success: boolean; message: string; data: { inserted: number; failed: number; errors: { row: number; errors: string[] }[] } }>(
+        "/students/import",
+        formData,
+        { params, headers: { "Content-Type": "multipart/form-data" } }
+      );
+      await queryClient.invalidateQueries({ queryKey: ["students"] });
+      const inserted = data.data?.inserted ?? 0;
+      const failed = data.data?.failed ?? 0;
+      const errorMsg = data.data?.errors?.length ? ` (${data.data.errors[0].errors[0]})` : "";
+      setToast(`Import finished: ${inserted} inserted, ${failed} failed${errorMsg}`);
+    } catch (err) {
+      setToast(`Import failed: ${errorMessage(err)}`);
+    }
   }
+
+  // Student Self-Service Portal
   if (isStudent) {
     return (
       <div className="space-y-5">
@@ -791,189 +873,557 @@ export function StudentPage() {
       </div>
     );
   }
+
+  // FACULTY VIEW: Assigned Classes Card Grid & Roster
+  if (isFaculty) {
+    return (
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold">My Classes</h2>
+            <p className="text-sm text-slate-500">
+              Select an assigned class to view student rosters, inspect attendance, or manage face enrollment.
+            </p>
+          </div>
+        </div>
+
+        {/* Level 1: Assigned Classes Card View */}
+        {!selectedClassCard && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-slate-800">Assigned Subject & Section Cards</h3>
+            {facultyAssignments.length === 0 ? (
+              <Card>
+                <div className="p-8 text-center text-slate-500">
+                  <Users className="mx-auto mb-3 text-slate-400" size={36} />
+                  <p className="text-base font-semibold text-slate-700">No Subject Assignments Found</p>
+                  <p className="text-sm">Contact your system administrator to assign subjects and sections to your profile.</p>
+                </div>
+              </Card>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {facultyAssignments.map((assignment) => {
+                  const subjectName = assignment.subject?.name ?? "Subject";
+                  const subjectCode = assignment.subject?.code ?? `SUB-${assignment.subject_id}`;
+                  const dept = departmentById.get(assignment.subject?.department_id ?? 0);
+                  const crs = courseById.get(assignment.subject?.course_id ?? 0);
+
+                  return (
+                    <div
+                      key={assignment.id}
+                      onClick={() => {
+                        setSelectedClassCard(assignment);
+                        setSelectedSection(assignment.section);
+                        if (assignment.subject?.department_id) setSelectedDepartmentId(assignment.subject.department_id);
+                        if (assignment.subject?.course_id) setSelectedCourseId(assignment.subject.course_id);
+                        setPage(1);
+                      }}
+                      className="group cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-500 hover:shadow-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="grid h-10 w-10 place-items-center rounded-lg bg-brand-50 text-brand-700">
+                          <BookOpen size={20} />
+                        </div>
+                        <span className="rounded-full bg-brand-100 px-3 py-1 text-xs font-bold text-brand-800">
+                          Section {assignment.section}
+                        </span>
+                      </div>
+                      <h3 className="mt-4 text-lg font-bold text-slate-900">{subjectCode}</h3>
+                      <p className="text-sm font-medium text-slate-700">{subjectName}</p>
+                      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                        <span>{crs ? crs.abbreviation : ""} {dept ? `• ${dept.abbreviation}` : ""}</span>
+                        <span className="font-semibold">{assignment.academic_year}</span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-brand-600 group-hover:underline">View Class Roster &rarr;</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Level 2: Faculty Roster View for Selected Class */}
+        {selectedClassCard && (
+          <div className="space-y-4">
+            {/* Top Breadcrumb Navigation & Action Row */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedClassCard(null);
+                    setSelectedSection(null);
+                    setSelectedDepartmentId(null);
+                    setSelectedCourseId(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 font-semibold text-brand-600 transition hover:text-brand-700 hover:underline"
+                >
+                  <ArrowLeft size={16} /> My Classes
+                </button>
+                <ChevronRight size={14} className="text-slate-400" />
+                <span className="font-bold text-slate-900">
+                  {selectedClassCard.subject?.code} - {selectedClassCard.subject?.name} (Section {selectedClassCard.section})
+                </span>
+              </div>
+
+              <Button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const params: Record<string, string | number> = { file_format: "csv" };
+                    if (selectedCourseId) params.course_id = selectedCourseId;
+                    if (selectedDepartmentId) params.department_id = selectedDepartmentId;
+                    if (selectedSection) params.section = selectedSection;
+                    const blob = await exportResource("/students/export", params);
+                    downloadFromResponse(blob, `roster_${selectedClassCard.subject?.code ?? "class"}_sec_${selectedClassCard.section}.csv`);
+                    setToast("Roster export started");
+                  } catch {
+                    setToast("Roster export failed");
+                  }
+                }}
+                className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+              >
+                <FileSpreadsheet size={16} /> Export Roster
+              </Button>
+            </div>
+
+            {/* Student Table */}
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full table-fixed text-left text-sm">
+                  <colgroup>
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[35%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">
+                        <button type="button" onClick={() => toggleSort("roll_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                          Roll No. {sortIcon("roll_no")}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button type="button" onClick={() => toggleSort("admission_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                          Admission No. {sortIcon("admission_no")}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button type="button" onClick={() => toggleSort("student")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                          Student Name {sortIcon("student")}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">Biometrics</th>
+                      <th className="px-3 py-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.data?.items.map((student) => (
+                      <tr key={student.id} className="border-t border-slate-100 align-middle">
+                        <td className="px-3 py-2 font-mono font-medium text-slate-800">{student.roll_no ?? "—"}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-900">{student.admission_no ?? student.student_number}</td>
+                        <td className="px-3 py-2 font-medium text-slate-900">{studentName(student)}</td>
+                        <td className="px-3 py-2">
+                          {((student.face_embedding_count ?? 0) > 0) ? (
+                            <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "", replaceExisting: true })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                              <RefreshCw size={13} /> Re-enroll
+                            </Button>
+                          ) : (
+                            <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "" })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                              <Upload size={13} /> Enroll
+                            </Button>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Button
+                            type="button"
+                            onClick={() => setEditingStudent(student)}
+                            className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                          >
+                            <PencilLine size={13} /> Edit
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600">
+                <div>
+                  {list.data?.total
+                    ? `Showing ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, list.data.total)} of ${list.data.total}`
+                    : "No students found in this selection"}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={page <= 1 || list.isFetching}
+                    className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Previous
+                  </Button>
+                  <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700">
+                    Page {page} of {Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
+                  </span>
+                  <Button
+                    type="button"
+                    onClick={() => setPage((current) => current + 1)}
+                    disabled={list.isFetching || page >= Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
+                    className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        <StudentEditModal
+          open={Boolean(editingStudent)}
+          student={editingStudent}
+          onClose={() => setEditingStudent(null)}
+          onSuccess={(message) => setToast(message)}
+        />
+        <FaceEnrollmentModal target={target} onClose={() => setTarget(null)} onSuccess={setToast} />
+        <Toast message={toast} />
+      </div>
+    );
+  }
+
+  // ADMIN VIEW: Full Manage Students Hierarchical Hub
+  const currentCourse = selectedCourseId ? courseById.get(selectedCourseId) : null;
+  const currentDepartment = selectedDepartmentId ? departmentById.get(selectedDepartmentId) : null;
+
   return (
     <div className="space-y-5">
+      {/* Header & Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-bold">Students</h2>
-            <p className="text-sm text-slate-500">Register students, enroll face images, and inspect attendance.</p>
+        <div>
+          <h2 className="text-2xl font-bold">Manage Students</h2>
+          <p className="text-sm text-slate-500">
+            Admin Management Console: Hierarchical course/department student enrollment & Excel imports.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canManageImports && (
+            <>
+              <Button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const blob = await exportResource("/students/template", { file_format: "xlsx" });
+                    downloadFromResponse(blob, "students_template.xlsx");
+                    setToast("Student template download started");
+                  } catch {
+                    setToast("Student template download failed");
+                  }
+                }}
+                className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+              >
+                <FileSpreadsheet size={16} /> Template
+              </Button>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
+                <Upload size={16} />
+                Import Excel
+                <input
+                  type="file"
+                  accept=".xlsx,.csv"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    await handleImport(file);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </>
+          )}
+          {canCreateStudent && (
+            <Button type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={16} /> Add Student
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Hierarchical Breadcrumb Navigation */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedCourseId(null);
+            setSelectedDepartmentId(null);
+            setSelectedSection(null);
+            setPage(1);
+          }}
+          className={`font-semibold transition hover:text-brand-600 ${!selectedCourseId ? "text-brand-700" : "text-slate-600"}`}
+        >
+          All Courses
+        </button>
+
+        {currentCourse && (
+          <>
+            <ChevronRight size={14} className="text-slate-400" />
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDepartmentId(null);
+                setSelectedSection(null);
+                setPage(1);
+              }}
+              className={`font-semibold transition hover:text-brand-600 ${!selectedDepartmentId ? "text-brand-700" : "text-slate-600"}`}
+            >
+              {currentCourse.abbreviation} ({currentCourse.name})
+            </button>
+          </>
+        )}
+
+        {currentDepartment && (
+          <>
+            <ChevronRight size={14} className="text-slate-400" />
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSection(null);
+                setPage(1);
+              }}
+              className={`font-semibold transition hover:text-brand-600 ${!selectedSection ? "text-brand-700" : "text-slate-600"}`}
+            >
+              {currentDepartment.abbreviation} ({currentDepartment.name})
+            </button>
+          </>
+        )}
+
+        {selectedSection && (
+          <>
+            <ChevronRight size={14} className="text-slate-400" />
+            <span className="font-semibold text-brand-700">Section {selectedSection}</span>
+          </>
+        )}
+      </div>
+
+      {/* Level 1: Course Selection Cards */}
+      {!selectedCourseId && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {coursesQuery.data?.items.map((course) => (
+            <div
+              key={course.id}
+              onClick={() => {
+                setSelectedCourseId(course.id);
+                setPage(1);
+              }}
+              className="group cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-500 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-brand-50 text-brand-700">
+                  <BookOpen size={20} />
+                </div>
+                <ChevronRight size={18} className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-brand-600" />
+              </div>
+              <h3 className="mt-4 text-lg font-bold text-slate-900">{course.abbreviation}</h3>
+              <p className="text-sm text-slate-500">{course.name}</p>
+              <p className="mt-3 text-xs font-semibold text-brand-600">Click to view departments &rarr;</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Level 2: Department Selection Cards */}
+      {selectedCourseId && !selectedDepartmentId && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-800">Departments in {currentCourse?.abbreviation}</h3>
+            <Button type="button" onClick={() => setSelectedCourseId(null)} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              <ArrowLeft size={16} /> Back to Courses
+            </Button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {canManageImports && (
-              <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredDepartments.map((dept) => (
+              <div
+                key={dept.id}
+                onClick={() => {
+                  setSelectedDepartmentId(dept.id);
+                  setPage(1);
+                }}
+                className="group cursor-pointer rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-500 hover:shadow-md"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="grid h-10 w-10 place-items-center rounded-lg bg-indigo-50 text-indigo-700">
+                    <Building2 size={20} />
+                  </div>
+                  <ChevronRight size={18} className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-brand-600" />
+                </div>
+                <h3 className="mt-4 text-lg font-bold text-slate-900">{dept.abbreviation}</h3>
+                <p className="text-sm text-slate-500">{dept.name}</p>
+                <p className="mt-3 text-xs font-semibold text-brand-600">Click to view section rosters &rarr;</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Level 3 & 4: Student Roster Table & Filters */}
+      {selectedCourseId && selectedDepartmentId && (
+        <div className="space-y-4">
+          {availableSections.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide font-semibold text-slate-500">Filter Section:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedSection(null)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${!selectedSection ? "bg-brand-600 text-white" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"}`}
+              >
+                All Sections
+              </button>
+              {availableSections.map((sec) => (
+                <button
+                  key={sec}
+                  type="button"
+                  onClick={() => setSelectedSection(sec)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${selectedSection === sec ? "bg-brand-600 text-white" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"}`}
+                >
+                  Section {sec}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Student Roster Table Card */}
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">
+                      <button type="button" onClick={() => toggleSort("roll_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                        Roll No. * {sortIcon("roll_no")}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2">
+                      <button type="button" onClick={() => toggleSort("admission_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                        Admission No. * {sortIcon("admission_no")}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2">
+                      <button type="button" onClick={() => toggleSort("student")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                        Student {sortIcon("student")}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2">Dept / Sec</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Year</th>
+                    <th className="px-3 py-2">Biometrics</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.data?.items.map((student) => (
+                    <tr key={student.id} className="border-t border-slate-100 align-middle">
+                      <td className="px-3 py-2 min-w-0 font-mono font-medium text-slate-800" title={student.roll_no ?? ""}>
+                        {student.roll_no ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap" title={student.admission_no ?? student.student_number ?? ""}>
+                        {student.admission_no ?? student.student_number}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="min-w-0 whitespace-normal break-words leading-tight text-slate-900 font-medium">
+                          {studentName(student)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="block min-w-0 truncate text-slate-700">
+                          {currentDepartment?.abbreviation ?? `Dept ${student.department_id}`} (Sec {student.section ?? "A"})
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">{student.enrollment_year}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-nowrap gap-1">
+                          {((student.face_embedding_count ?? 0) > 0) ? (
+                            <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "", replaceExisting: true })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                              <RefreshCw size={13} /> Re-enroll
+                            </Button>
+                          ) : (
+                            <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "" })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                              <Upload size={13} /> Enroll
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Button
+                          type="button"
+                          onClick={() => setEditingStudent(student)}
+                          className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                        >
+                          <PencilLine size={13} /> Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600">
+              <div>
+                {list.data?.total
+                  ? `Showing ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, list.data.total)} of ${list.data.total}`
+                  : "No students found in this selection"}
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      const blob = await exportResource("/students/template", { file_format: "xlsx" });
-                      downloadFromResponse(blob, "students_template.xlsx");
-                      setToast("Student template download started");
-                    } catch {
-                      setToast("Student template download failed");
-                    }
-                  }}
-                  className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page <= 1 || list.isFetching}
+                  className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
                 >
-                  <FileSpreadsheet size={16} />
-                  Template
+                  Previous
                 </Button>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  <Upload size={16} />
-                  Import Excel
-                  <input
-                    type="file"
-                    accept=".xlsx"
-                    className="hidden"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        await handleImport(file);
-                      } catch {
-                        setToast("Student import failed");
-                      } finally {
-                        event.target.value = "";
-                      }
-                    }}
-                  />
-                </label>
-              </>
-            )}
-            {canCreateStudent && (
-              <Button type="button" onClick={() => setCreateOpen(true)}>
-                <Plus size={16} />
-                Add Student
-              </Button>
-            )}
-          </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-[14%]" />
-              <col className="w-[13%]" />
-              <col className="w-[28%]" />
-              <col className="w-[22%]" />
-              <col className="w-[8%]" />
-              <col className="w-[12%]" />
-              <col className="w-[10%]" />
-            </colgroup>
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-3 py-2">
-                  <button type="button" onClick={() => toggleSort("roll_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
-                    Roll No.
-                    {sortIcon("roll_no")}
-                  </button>
-                </th>
-                <th className="px-3 py-2">
-                  <button type="button" onClick={() => toggleSort("admission_no")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
-                    Admission No.
-                    {sortIcon("admission_no")}
-                  </button>
-                </th>
-                <th className="px-3 py-2">
-                  <button type="button" onClick={() => toggleSort("student")} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 whitespace-nowrap">
-                    Student
-                    {sortIcon("student")}
-                  </button>
-                </th>
-                <th className="px-3 py-2">Department</th>
-                <th className="px-3 py-2 whitespace-nowrap">Year</th>
-                <th className="px-3 py-2">Face Enrollment</th>
-                <th className="px-3 py-2">Info</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.data?.items.map((student) => (
-                <tr key={student.id} className="border-t border-slate-100 align-middle">
-                  <td className="px-3 py-2 min-w-0 whitespace-normal break-words leading-tight text-slate-700" title={student.roll_no ?? ""}>
-                    {student.roll_no ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap" title={student.admission_no ?? student.student_number ?? ""}>
-                    {student.admission_no ?? student.student_number}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="min-w-0 whitespace-normal break-words leading-tight text-slate-900">
-                      {studentName(student)}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div
-                      className="block min-w-0 truncate text-slate-700"
-                      title={`${departmentById.get(student.department_id)?.abbreviation ?? `Dept ${student.department_id}`} - ${departmentById.get(student.department_id)?.name ?? "Department"}${student.course_id ? ` • ${courseById.get(student.course_id)?.abbreviation ?? `Course ${student.course_id}`}` : ""}`}
-                    >
-                      {departmentById.get(student.department_id)?.abbreviation ?? `Dept ${student.department_id}`} - {departmentById.get(student.department_id)?.name ?? "Department"}
-                      {student.course_id ? ` • ${courseById.get(student.course_id)?.abbreviation ?? `Course ${student.course_id}`}` : ""}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{student.enrollment_year}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-nowrap gap-1">
-                      {((student.face_embedding_count ?? 0) > 0) ? (
-                        <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "", replaceExisting: true })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                          <RefreshCw size={13} /> Re-enroll
-                        </Button>
-                      ) : (
-                        <Button onClick={() => openEnrollment({ id: student.id, label: student.admission_no ?? student.student_number ?? "" })} className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                          <Upload size={13} /> Enroll
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <Button
-                      type="button"
-                      onClick={() => setEditingStudent(student)}
-                      className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
-                    >
-                      <PencilLine size={13} /> Edit
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700">
+                  Page {page} of {Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
+                </span>
+                <Button
+                  type="button"
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={list.isFetching || page >= Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
+                  className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </Card>
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600">
-          <div>
-            {list.data?.total
-              ? `Showing ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, list.data.total)} of ${list.data.total}`
-              : "No students found"}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page <= 1 || list.isFetching}
-              className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
-            >
-              Previous
-            </Button>
-            <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700">
-              Page {page} of {Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
-            </span>
-            <Button
-              type="button"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={list.isFetching || page >= Math.max(1, Math.ceil((list.data?.total ?? 0) / pageSize))}
-              className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      </Card>
-        <StudentCreateModal
-          open={createOpen}
-          onClose={() => {
-            setCreateOpen(false);
-            queryClient.invalidateQueries({ queryKey: ["students"] });
-          }}
-          onSuccess={(message) => setToast(message)}
-          isFaculty={isFaculty}
-        />
+      )}
+
+      {/* Modals */}
+      <StudentCreateModal
+        open={createOpen}
+        onClose={() => {
+          setCreateOpen(false);
+          queryClient.invalidateQueries({ queryKey: ["students"] });
+        }}
+        onSuccess={(message) => setToast(message)}
+        defaultCourseId={selectedCourseId}
+        defaultDepartmentId={selectedDepartmentId}
+        defaultSection={selectedSection}
+      />
       <StudentEditModal
         open={Boolean(editingStudent)}
         student={editingStudent}

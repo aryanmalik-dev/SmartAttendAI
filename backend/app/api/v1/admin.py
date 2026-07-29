@@ -552,8 +552,14 @@ def template_faculty(file_format: str = "csv", db: Session = Depends(get_db), _:
 
 
 @router.post("/students/import")
-def import_students(file: UploadFile = File(...), user: User = Depends(require_roles(UserRole.FACULTY)), db: Session = Depends(get_db)):
-    return ok(StudentService(db).import_file(file, user), "Students imported")
+def import_students(
+    file: UploadFile = File(...),
+    department_id: int | None = None,
+    course_id: int | None = None,
+    user: User = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    return ok(StudentService(db).import_file(file, user, department_id=department_id, course_id=course_id), "Students imported")
 
 
 @router.get("/students/export")
