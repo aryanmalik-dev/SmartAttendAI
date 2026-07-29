@@ -144,7 +144,7 @@ class ReportService:
                 Department.id.label("department_id"),
                 Department.name.label("department_name"),
                 Course.id.label("course_id"),
-                Course.code.label("course_code"),
+                Course.abbreviation.label("course_abbreviation"),
                 Course.name.label("course_name"),
                 Subject.id.label("subject_id"),
                 Subject.code.label("subject_code"),
@@ -179,7 +179,7 @@ class ReportService:
                     faculty_user.full_name.ilike(term),
                     Subject.code.ilike(term),
                     Subject.name.ilike(term),
-                    Course.code.ilike(term),
+                    Course.abbreviation.ilike(term),
                     Course.name.ilike(term),
                     Department.name.ilike(term),
                 )
@@ -444,12 +444,12 @@ class ReportService:
             "department": (
                 Department.id.label("entity_id"),
                 Department.name.label("entity_name"),
-                Department.code.label("code"),
+                Department.abbreviation.label("abbreviation"),
             ),
             "course": (
                 Course.id.label("entity_id"),
                 Course.name.label("entity_name"),
-                Course.code.label("code"),
+                Course.abbreviation.label("abbreviation"),
             ),
             "subject": (
                 Subject.id.label("entity_id"),
@@ -482,9 +482,9 @@ class ReportService:
         if kind == "faculty":
             group_by = [Faculty.id, faculty_user.full_name, Faculty.employee_id]
         elif kind == "department":
-            group_by = [Department.id, Department.name, Department.code]
+            group_by = [Department.id, Department.name, Department.abbreviation]
         elif kind == "course":
-            group_by = [Course.id, Course.name, Course.code]
+            group_by = [Course.id, Course.name, Course.abbreviation]
         else:
             group_by = [Subject.id, Subject.name, Subject.code]
 
@@ -494,9 +494,9 @@ class ReportService:
             if kind == "faculty":
                 conditions.append(or_(faculty_user.full_name.ilike(term), Faculty.employee_id.ilike(term)))
             elif kind == "department":
-                conditions.append(or_(Department.name.ilike(term), Department.code.ilike(term)))
+                conditions.append(or_(Department.name.ilike(term), Department.abbreviation.ilike(term)))
             elif kind == "course":
-                conditions.append(or_(Course.name.ilike(term), Course.code.ilike(term)))
+                conditions.append(or_(Course.name.ilike(term), Course.abbreviation.ilike(term)))
             else:
                 conditions.append(or_(Subject.name.ilike(term), Subject.code.ilike(term)))
         if department_id is not None:
@@ -534,7 +534,8 @@ class ReportService:
 
         sort_map = {
             "entity_name": stmt.selected_columns.entity_name,
-            "code": stmt.selected_columns.code,
+            "abbreviation": getattr(stmt.selected_columns, "abbreviation", stmt.selected_columns.entity_name),
+            "code": getattr(stmt.selected_columns, "code", stmt.selected_columns.entity_name),
             "total_records": stmt.selected_columns.total_records,
             "present": stmt.selected_columns.present,
             "absent": stmt.selected_columns.absent,
@@ -627,7 +628,7 @@ class ReportService:
         return {
             "scope": "department",
             "department_id": department.id,
-            "department_code": department.code,
+            "department_abbreviation": department.abbreviation,
             "department_name": department.name,
             **row,
         }
@@ -639,7 +640,7 @@ class ReportService:
         return {
             "scope": "course",
             "course_id": course.id,
-            "course_code": course.code,
+            "course_abbreviation": course.abbreviation,
             "course_name": course.name,
             **row,
         }

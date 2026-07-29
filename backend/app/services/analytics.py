@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.models.entities import AttendanceRecord, AttendanceSession, Course, Department, Faculty, Notification, Student, Subject, SubjectAssignment, User
+from app.models.entities import AttendanceRecord, AttendanceSession, Classroom, Course, Department, Faculty, Notification, Student, Subject, SubjectAssignment, User
 from app.models.enums import AttendanceStatus, NotificationStatus, SessionStatus
 from app.services.reports import ReportService
 
@@ -64,7 +64,7 @@ def _record_rows(db: Session, limit: int = 10) -> list[dict]:
             student_user.full_name.label("student_name"),
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
-            Course.code.label("course_code"),
+            Course.abbreviation.label("course_abbreviation"),
             Course.name.label("course_name"),
             Faculty.id.label("faculty_id"),
             faculty_user.full_name.label("faculty_name"),
@@ -88,19 +88,21 @@ def _upcoming_sessions(db: Session, limit: int = 10) -> list[dict]:
     faculty_user = aliased(User)
     rows = db.execute(
         select(
-            AttendanceSession.id.label("session_id"),
+            AttendanceSession.id.label("id"),
             AttendanceSession.session_date,
             AttendanceSession.start_time,
             AttendanceSession.end_time,
             AttendanceSession.status,
+            Classroom.name.label("classroom_name"),
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
-            Course.code.label("course_code"),
+            Course.abbreviation.label("course_abbreviation"),
             Course.name.label("course_name"),
             Faculty.id.label("faculty_id"),
             faculty_user.full_name.label("faculty_name"),
         )
         .select_from(AttendanceSession)
+        .join(Classroom, AttendanceSession.classroom_id == Classroom.id)
         .join(SubjectAssignment, AttendanceSession.subject_assignment_id == SubjectAssignment.id)
         .join(Subject, SubjectAssignment.subject_id == Subject.id)
         .join(Course, Subject.course_id == Course.id)
@@ -120,19 +122,21 @@ def _active_sessions(db: Session, limit: int = 10) -> list[dict]:
     faculty_user = aliased(User)
     rows = db.execute(
         select(
-            AttendanceSession.id.label("session_id"),
+            AttendanceSession.id.label("id"),
             AttendanceSession.session_date,
             AttendanceSession.start_time,
             AttendanceSession.end_time,
             AttendanceSession.status,
+            Classroom.name.label("classroom_name"),
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
-            Course.code.label("course_code"),
+            Course.abbreviation.label("course_abbreviation"),
             Course.name.label("course_name"),
             Faculty.id.label("faculty_id"),
             faculty_user.full_name.label("faculty_name"),
         )
         .select_from(AttendanceSession)
+        .join(Classroom, AttendanceSession.classroom_id == Classroom.id)
         .join(SubjectAssignment, AttendanceSession.subject_assignment_id == SubjectAssignment.id)
         .join(Subject, SubjectAssignment.subject_id == Subject.id)
         .join(Course, Subject.course_id == Course.id)
@@ -161,9 +165,49 @@ def dashboard_metrics(db: Session) -> dict:
     weekly_trend = _trend(db, 7)
     monthly_trend = _trend(db, 30)
 
-    course_wise = report_service.entity_report("course", page=1, size=8, sort="attendance_percentage:desc")[0]
-    department_wise = report_service.entity_report("department", page=1, size=8, sort="attendance_percentage:desc")[0]
-    top_subjects = report_service.entity_report("subject", page=1, size=8, sort="attendance_percentage:desc")[0]
+    course_rows = report_service.entity_report("course", page=1, size=8, sort="attendance_percentage:desc")[0]
+    department_rows = db.execute(
+        select(
+            Department.id.label("id"),
+            Department.name.label("department"),
+            Department.abbreviation.label("abbreviation"),
+            func.count(Student.id).label("students"),
+        )
+        .select_from(Department)
+        .outerjoin(Student, Student.department_id == Department.id)
+        .group_by(Department.id, Department.name, Department.abbreviation)
+        .order_by(func.count(Student.id).desc())
+        .limit(8)
+    ).mappings().all()
+    subject_rows = report_service.entity_report("subject", page=1, size=8, sort="attendance_percentage:desc")[0]
+    course_wise = [
+        {
+            "course": row["entity_name"],
+            "abbreviation": row.get("abbreviation"),
+            "attendance": float(row.get("attendance_percentage", 0.0)),
+            "present": int(row.get("present", 0)),
+            "absent": int(row.get("absent", 0)),
+        }
+        for row in course_rows
+    ]
+    department_wise = [
+        {
+            "department": row["department"],
+            "abbreviation": row.get("abbreviation"),
+            "students": int(row["students"]),
+        }
+        for row in department_rows
+    ]
+    top_subjects = [
+        {
+            "subject": row["entity_name"],
+            "code": row.get("code"),
+            "attendance": float(row.get("attendance_percentage", 0.0)),
+            "present": int(row.get("present", 0)),
+            "absent": int(row.get("absent", 0)),
+        }
+        for row in subject_rows
+    ]
     low_attendance_students = report_service.student_summaries(page=1, size=8, sort="attendance_percentage:asc")[0]
 
     recent_notifications = db.execute(

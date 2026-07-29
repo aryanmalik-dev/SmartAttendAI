@@ -1,11 +1,20 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from __future__ import annotations
+
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class StudentCreate(BaseModel):
-    full_name: str
-    email: EmailStr
+    model_config = ConfigDict(populate_by_name=True)
 
-    student_number: str
+    full_name: str
+    admission_no: str = Field(alias="student_number")
+    roll_no: str | None = None
+    date_of_birth: date | None = None
+    student_mobile: str | None = None
+    father_mobile: str | None = None
+    guardian_email: EmailStr | None = None
 
     department_id: int
     course_id: int
@@ -16,38 +25,41 @@ class StudentCreate(BaseModel):
     section: str
     batch: str
 
-    phone: str | None = None
-    guardian_email: EmailStr | None = None
-
 
 class StudentUpdate(BaseModel):
     full_name: str | None = None
 
+    roll_no: str | None = None
+    date_of_birth: date | None = None
+    student_mobile: str | None = None
+    father_mobile: str | None = None
+    guardian_email: EmailStr | None = None
+
     semester: int | None = None
     section: str | None = None
     batch: str | None = None
-
-    phone: str | None = None
-    guardian_email: EmailStr | None = None
-
-    low_attendance_threshold: float | None = None
 
 
 class StudentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    admission_no: str
+    student_number: str
+    roll_no: str | None
     full_name: str
     email: EmailStr
-
-    student_number: str
+    date_of_birth: date | None
+    student_mobile: str | None
+    father_mobile: str | None
 
     department_id: int
     course_id: int
+    enrollment_year: int
 
     semester: int
     section: str
     batch: str
 
-    phone: str | None
     guardian_email: EmailStr | None
+    face_embedding_count: int = 0

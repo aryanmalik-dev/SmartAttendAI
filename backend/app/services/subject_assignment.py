@@ -4,9 +4,9 @@ import pandas as pd
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.models.entities import Faculty, Subject, SubjectAssignment
+from app.models.entities import Faculty, Subject, SubjectAssignment, User
 from app.schemas.subject_assignment import SubjectAssignmentCreate, SubjectAssignmentUpdate
 from app.services.data_io import (
     apply_sort,
@@ -23,7 +23,14 @@ class SubjectAssignmentService:
         self.db = db
 
     def _get(self, item_id: int) -> SubjectAssignment:
-        item = self.db.get(SubjectAssignment, item_id)
+        item = self.db.scalar(
+            select(SubjectAssignment)
+            .options(
+                selectinload(SubjectAssignment.faculty).selectinload(Faculty.user).selectinload(User.roles),
+                selectinload(SubjectAssignment.subject),
+            )
+            .where(SubjectAssignment.id == item_id)
+        )
         if not item:
             raise HTTPException(status_code=404, detail="Subject assignment not found")
         return item
@@ -66,7 +73,7 @@ class SubjectAssignmentService:
             self.db.rollback()
             raise HTTPException(status_code=400, detail="Subject assignment already exists") from exc
         self.db.refresh(item)
-        return item
+        return self._get(item.id)
 
     def list(
         self,
@@ -80,7 +87,10 @@ class SubjectAssignmentService:
         academic_year: str | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[SubjectAssignment], int]:
-        stmt = select(SubjectAssignment)
+        stmt = select(SubjectAssignment).options(
+            selectinload(SubjectAssignment.faculty).selectinload(Faculty.user).selectinload(User.roles),
+            selectinload(SubjectAssignment.subject),
+        )
         count_stmt = select(func.count()).select_from(SubjectAssignment)
         if search:
             criteria = or_(SubjectAssignment.section.ilike(f"%{search}%"), SubjectAssignment.academic_year.ilike(f"%{search}%"))
@@ -131,7 +141,7 @@ class SubjectAssignmentService:
             self.db.rollback()
             raise HTTPException(status_code=400, detail="Subject assignment already exists") from exc
         self.db.refresh(item)
-        return item
+        return self._get(item.id)
 
     def delete(self, item_id: int) -> None:
         item = self._get(item_id)

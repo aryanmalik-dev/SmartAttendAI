@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
-from app.core.responses import ok, page
+from app.core.responses import ok, page as page_response
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.schemas.reports import AttendanceReportFilters
@@ -41,6 +41,7 @@ def _export(service: ReportService, kind: str, file_format: str, **filters):
 @router.get("/records")
 def records(
     filters: AttendanceReportFilters = Depends(),
+    student_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     items, total = ReportService(db).attendance_records(
@@ -60,7 +61,7 @@ def records(
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/students")
@@ -79,7 +80,7 @@ def students(filters: AttendanceReportFilters = Depends(), db: Session = Depends
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/students/{student_id}")
@@ -110,7 +111,7 @@ def student_records(
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/faculty")
@@ -132,7 +133,7 @@ def faculty(filters: AttendanceReportFilters = Depends(), db: Session = Depends(
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/faculty/{faculty_id}")
@@ -159,7 +160,7 @@ def departments(filters: AttendanceReportFilters = Depends(), db: Session = Depe
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/departments/{department_id}")
@@ -186,7 +187,7 @@ def courses(filters: AttendanceReportFilters = Depends(), db: Session = Depends(
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/courses/{course_id}")
@@ -213,7 +214,7 @@ def subjects(filters: AttendanceReportFilters = Depends(), db: Session = Depends
         start_date=filters.start_date,
         end_date=filters.end_date,
     )
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/subjects/{subject_id}")
@@ -258,7 +259,7 @@ def monthly(
 def semester(
     db: Session = Depends(get_db),
     semester_no: int = Query(..., ge=1),
-    page_no: int = Query(1, ge=1),
+    page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
     sort: str | None = None,
@@ -271,7 +272,7 @@ def semester(
 ):
     items, total = ReportService(db).semester_report(
         semester=semester_no,
-        page=page_no,
+        page=page,
         size=size,
         search=search,
         sort=sort,
@@ -282,25 +283,25 @@ def semester(
         start_date=start_date,
         end_date=end_date,
     )
-    return page(items, total, page_no, size)
+    return page_response(items, total, page, size)
 
 
 @router.get("/low-attendance")
 def low_attendance(filters: AttendanceReportFilters = Depends(), db: Session = Depends(get_db)):
     items, total = ReportService(db).low_attendance_report(filters)
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/top-attendance")
 def top_attendance(filters: AttendanceReportFilters = Depends(), db: Session = Depends(get_db)):
     items, total = ReportService(db).top_attendance_report(filters)
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/missing-attendance")
 def missing_attendance(filters: AttendanceReportFilters = Depends(), db: Session = Depends(get_db)):
     items, total = ReportService(db).missing_attendance_report(filters)
-    return page(items, total, filters.page, filters.size)
+    return page_response(items, total, filters.page, filters.size)
 
 
 @router.get("/export/{kind}")

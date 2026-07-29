@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.entities import Course, Department
+from app.models.entities import Course
 from app.schemas.course import CourseCreate, CourseUpdate
 from app.services.data_io import (
     apply_sort,
@@ -28,27 +28,29 @@ class CourseService:
             raise HTTPException(status_code=404, detail="Course not found")
         return item
 
-    def _validate_department(self, department_id: int) -> None:
-        if not self.db.get(Department, department_id):
-            raise HTTPException(status_code=404, detail="Department not found")
-
-    def _validate_unique(self, code: str, exclude_id: int | None = None) -> None:
-        stmt = select(Course).where(Course.code == code)
+    def _validate_unique(self, name: str | None = None, abbreviation: str | None = None, exclude_id: int | None = None) -> None:
+        clauses = []
+        if name is not None:
+            clauses.append(Course.name == name)
+        if abbreviation is not None:
+            clauses.append(Course.abbreviation == abbreviation)
+        if not clauses:
+            return
+        stmt = select(Course).where(or_(*clauses))
         if exclude_id is not None:
             stmt = stmt.where(Course.id != exclude_id)
         if self.db.scalar(stmt):
-            raise HTTPException(status_code=400, detail="Course code already exists")
+            raise HTTPException(status_code=400, detail="Course name or abbreviation already exists")
 
     def create(self, data: CourseCreate) -> Course:
-        self._validate_department(data.department_id)
-        self._validate_unique(data.code)
+        self._validate_unique(data.name, data.abbreviation)
         item = Course(**data.model_dump())
         self.db.add(item)
         try:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=400, detail="Course code already exists") from exc
+            raise HTTPException(status_code=400, detail="Course name or abbreviation already exists") from exc
         self.db.refresh(item)
         return item
 
@@ -58,22 +60,18 @@ class CourseService:
         size: int,
         search: str | None = None,
         sort: str | None = None,
-        department_id: int | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[Course], int]:
         stmt = select(Course)
         count_stmt = select(func.count()).select_from(Course)
         if search:
-            criteria = or_(Course.code.ilike(f"%{search}%"), Course.name.ilike(f"%{search}%"), Course.abbreviation.ilike(f"%{search}%"))
+            criteria = or_(Course.name.ilike(f"%{search}%"), Course.abbreviation.ilike(f"%{search}%"))
             stmt = stmt.where(criteria)
             count_stmt = count_stmt.where(criteria)
-        if department_id is not None:
-            stmt = stmt.where(Course.department_id == department_id)
-            count_stmt = count_stmt.where(Course.department_id == department_id)
         if is_active is not None:
             stmt = stmt.where(Course.is_active.is_(is_active))
             count_stmt = count_stmt.where(Course.is_active.is_(is_active))
-        stmt = apply_sort(stmt, Course, sort, "code")
+        stmt = apply_sort(stmt, Course, sort, "abbreviation")
         total = self.db.scalar(count_stmt) or 0
         items = self.db.scalars(stmt.offset((page - 1) * size).limit(size)).all()
         return items, total
@@ -84,17 +82,15 @@ class CourseService:
     def update(self, item_id: int, data: CourseUpdate) -> Course:
         item = self._get(item_id)
         values = data.model_dump(exclude_unset=True)
-        if "department_id" in values:
-            self._validate_department(values["department_id"])
-        if "code" in values:
-            self._validate_unique(values["code"], exclude_id=item.id)
+        if "name" in values or "abbreviation" in values:
+            self._validate_unique(values.get("name", item.name), values.get("abbreviation", item.abbreviation), exclude_id=item.id)
         for key, value in values.items():
             setattr(item, key, value)
         try:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=400, detail="Course code already exists") from exc
+            raise HTTPException(status_code=400, detail="Course name or abbreviation already exists") from exc
         self.db.refresh(item)
         return item
 
@@ -112,10 +108,8 @@ class CourseService:
         return pd.DataFrame(
             [
                 {
-                    "code": item.code,
                     "name": item.name,
                     "abbreviation": item.abbreviation,
-                    "department_id": item.department_id,
                     "duration_years": item.duration_years,
                     "is_active": item.is_active,
                 }
@@ -130,12 +124,12 @@ class CourseService:
         return dataframe_to_csv_bytes(df)
 
     def template(self, file_format: str = "csv") -> bytes:
-        headers = ["code", "name", "abbreviation", "department_id", "duration_years", "is_active"]
+        headers = ["name", "abbreviation", "duration_years", "is_active"]
         return template_excel_bytes(headers, "courses_template") if file_format == "xlsx" else template_csv_bytes(headers)
 
     def import_file(self, file: UploadFile) -> dict:
         df = read_upload_dataframe(file)
-        required = ["code", "name", "abbreviation", "department_id", "duration_years", "is_active"]
+        required = ["name", "abbreviation", "duration_years", "is_active"]
         missing = [column for column in required if column not in df.columns]
         if missing:
             raise HTTPException(status_code=400, detail=f"Missing columns: {', '.join(missing)}")
@@ -150,21 +144,18 @@ class CourseService:
             try:
                 data = CourseCreate.model_validate(
                     {
-                        "code": str(row["code"]).strip(),
                         "name": str(row["name"]).strip(),
                         "abbreviation": str(row["abbreviation"]).strip(),
-                        "department_id": int(row["department_id"]),
                         "duration_years": int(row["duration_years"]),
                         "is_active": str(row["is_active"]).strip().lower() not in {"false", "0", "no"},
                     }
                 )
-                if data.code in seen or self.db.scalar(select(Course).where(Course.code == data.code)):
-                    raise HTTPException(status_code=400, detail="Course code already exists")
-                self._validate_department(data.department_id)
+                if data.name in seen or self.db.scalar(select(Course).where(or_(Course.name == data.name, Course.abbreviation == data.abbreviation))):
+                    raise HTTPException(status_code=400, detail="Course name or abbreviation already exists")
                 self.db.add(Course(**data.model_dump()))
                 self.db.commit()
                 inserted += 1
-                seen.add(data.code)
+                seen.add(data.name)
             except Exception as exc:  # noqa: BLE001
                 self.db.rollback()
                 failed += 1

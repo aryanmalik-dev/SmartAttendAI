@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import func, or_, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import hash_password
-from app.models.entities import Course, Student, User, UserRoleAssignment
+from app.core.config import get_settings
+from app.models.entities import Course, Department, FaceEmbedding, Faculty, Student, User, UserRoleAssignment
 from app.models.enums import UserRole
 from app.schemas.student import StudentCreate, StudentUpdate
 from app.services.data_io import (
-    apply_sort,
     dataframe_to_csv_bytes,
     dataframe_to_excel_bytes,
     read_upload_dataframe,
@@ -22,6 +23,11 @@ from app.services.data_io import (
 class StudentService:
     def __init__(self, db: Session):
         self.db = db
+        self.settings = get_settings()
+
+    def _student_email(self, admission_no: str) -> str:
+        local_part = admission_no.strip().replace(" ", "")
+        return f"{local_part}@{self.settings.student_email_domain}"
 
     def _get(self, student_id: int) -> Student:
         student = self.db.scalar(
@@ -29,6 +35,12 @@ class StudentService:
         )
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+        student.face_embedding_count = self.db.scalar(
+            select(func.count(FaceEmbedding.id)).where(
+                FaceEmbedding.student_id == student.id,
+                FaceEmbedding.is_active.is_(True),
+            )
+        ) or 0
         return student
 
     def _validate_unique_email(self, email: str, exclude_user_id: int | None = None) -> None:
@@ -51,15 +63,39 @@ class StudentService:
             raise HTTPException(status_code=404, detail="Course not found")
         return course
 
+    def _validate_department(self, department_id: int) -> Department:
+        department = self.db.get(Department, department_id)
+        if not department:
+            raise HTTPException(status_code=404, detail="Department not found")
+        return department
+
+    def _faculty_scope(self, user: User) -> tuple[Faculty, Department, Course]:
+        faculty = self.db.scalar(
+            select(Faculty)
+            .options(selectinload(Faculty.department))
+            .where(Faculty.user_id == user.id)
+        )
+        if not faculty:
+            raise HTTPException(status_code=400, detail="Faculty profile not found for student import")
+        if not faculty.department:
+            raise HTTPException(status_code=400, detail="Faculty department is required for student import")
+        course_id = faculty.department.course_id
+        if course_id is None:
+            raise HTTPException(status_code=400, detail="Faculty department is not linked to a course")
+        course = self._validate_course(course_id)
+        return faculty, faculty.department, course
+
     def create_student(self, data: StudentCreate) -> Student:
-        self._validate_unique_email(data.email)
-        self._validate_unique_student_number(data.student_number)
+        self._validate_unique_student_number(data.admission_no)
+        email = self._student_email(data.admission_no)
+        self._validate_unique_email(email)
+        department = self._validate_department(data.department_id)
         course = self._validate_course(data.course_id)
-        if course.department_id != data.department_id:
-            raise HTTPException(status_code=400, detail="Student department must match course department")
+        if department.course_id != course.id:
+            raise HTTPException(status_code=400, detail="Student department must belong to the selected course")
 
         user = User(
-            email=data.email,
+            email=email,
             full_name=data.full_name,
             password_hash=None,
             is_active=False,
@@ -70,14 +106,18 @@ class StudentService:
         self.db.add(UserRoleAssignment(user_id=user.id, role=UserRole.STUDENT))
         student = Student(
             user_id=user.id,
-            student_number=data.student_number,
+            student_number=data.admission_no,
+            roll_no=data.roll_no,
+            date_of_birth=data.date_of_birth,
+            student_mobile=data.student_mobile,
+            father_mobile=data.father_mobile,
             department_id=data.department_id,
             course_id=data.course_id,
             enrollment_year=data.enrollment_year,
             semester=data.semester,
             section=data.section,
             batch=data.batch,
-            phone=data.phone,
+            phone=data.student_mobile,
             guardian_email=data.guardian_email,
         )
         self.db.add(student)
@@ -122,9 +162,36 @@ class StudentService:
         if batch is not None:
             stmt = stmt.where(Student.batch == batch)
             count_stmt = count_stmt.where(Student.batch == batch)
-        stmt = apply_sort(stmt, Student, sort, "student_number")
+        if not sort:
+            stmt = stmt.order_by(Student.roll_no.asc().nullslast(), Student.student_number.asc())
+        else:
+            field_name, _, direction = sort.partition(":")
+            sort_map = {
+                "admission_no": Student.student_number,
+                "student_number": Student.student_number,
+                "roll_no": Student.roll_no,
+                "student": User.full_name,
+                "full_name": User.full_name,
+                "name": User.full_name,
+            }
+            column = sort_map.get(field_name, Student.roll_no)
+            ordering = desc(column).nullslast() if direction.lower() == "desc" else asc(column).nullslast()
+            stmt = stmt.order_by(ordering, Student.student_number.asc())
         total = self.db.scalar(count_stmt) or 0
         items = self.db.scalars(stmt.offset((page - 1) * size).limit(size)).all()
+        if items:
+            counts = dict(
+                self.db.execute(
+                    select(FaceEmbedding.student_id, func.count(FaceEmbedding.id))
+                    .where(
+                        FaceEmbedding.student_id.in_([item.id for item in items]),
+                        FaceEmbedding.is_active.is_(True),
+                    )
+                    .group_by(FaceEmbedding.student_id)
+                ).all()
+            )
+            for item in items:
+                item.face_embedding_count = int(counts.get(item.id, 0) or 0)
         return items, total
 
     def get_student(self, student_id: int) -> Student:
@@ -135,14 +202,16 @@ class StudentService:
         values = data.model_dump(exclude_unset=True)
         if "full_name" in values:
             student.user.full_name = values.pop("full_name")
-        if "low_attendance_threshold" in values:
-            student.low_attendance_threshold = values.pop("low_attendance_threshold")
+        if "student_mobile" in values:
+            student.student_mobile = values["student_mobile"]
+            student.phone = values["student_mobile"]
         for key, value in values.items():
             setattr(student, key, value)
         if "course_id" in values or "department_id" in values:
+            department = self._validate_department(student.department_id)
             course = self._validate_course(student.course_id)
-            if course.department_id != student.department_id:
-                raise HTTPException(status_code=400, detail="Student department must match course department")
+            if department.course_id != course.id:
+                raise HTTPException(status_code=400, detail="Student department must belong to the selected course")
         self.db.commit()
         self.db.refresh(student)
         return self._get(student.id)
@@ -158,17 +227,20 @@ class StudentService:
             [
                 {
                     "email": item.user.email,
+                    "admission_no": item.admission_no,
                     "full_name": item.user.full_name,
                     "student_number": item.student_number,
+                    "roll_no": item.roll_no or "",
+                    "date_of_birth": item.date_of_birth.isoformat() if item.date_of_birth else "",
+                    "student_mobile": item.student_mobile or "",
+                    "father_mobile": item.father_mobile or "",
                     "department_id": item.department_id,
                     "course_id": item.course_id,
                     "enrollment_year": item.enrollment_year,
                     "semester": item.semester,
                     "section": item.section,
                     "batch": item.batch,
-                    "phone": item.phone or "",
                     "guardian_email": item.guardian_email or "",
-                    "low_attendance_threshold": item.low_attendance_threshold,
                 }
                 for item in items
             ]
@@ -180,38 +252,32 @@ class StudentService:
 
     def template(self, file_format: str = "csv") -> bytes:
         headers = [
-            "email",
+            "roll_no",
+            "admission_no",
             "full_name",
-            "password",
-            "student_number",
-            "department_id",
-            "course_id",
+            "batch",
+            "date_of_birth",
+            "student_mobile",
+            "father_mobile",
             "enrollment_year",
             "semester",
             "section",
-            "batch",
-            "phone",
-            "guardian_email",
-            "low_attendance_threshold",
         ]
         return template_excel_bytes(headers, "students_template") if file_format == "xlsx" else template_csv_bytes(headers)
 
-    def import_file(self, file: UploadFile) -> dict:
+    def import_file(self, file: UploadFile, user: User) -> dict:
         df = read_upload_dataframe(file)
         required = [
-            "email",
+            "admission_no",
+            "roll_no",
             "full_name",
-            "password",
-            "student_number",
-            "department_id",
-            "course_id",
+            "batch",
+            "date_of_birth",
+            "student_mobile",
+            "father_mobile",
             "enrollment_year",
             "semester",
             "section",
-            "batch",
-            "phone",
-            "guardian_email",
-            "low_attendance_threshold",
         ]
         missing = [column for column in required if column not in df.columns]
         if missing:
@@ -222,34 +288,48 @@ class StudentService:
         errors: list[dict] = []
         seen_emails: set[str] = set()
         seen_numbers: set[str] = set()
+        _, department, course = self._faculty_scope(user)
+
+        def _clean(value: object) -> str:
+            if pd.isna(value):
+                return ""
+            return str(value).strip()
+
+        def _parse_optional_date(value: object) -> date | None:
+            if pd.isna(value) or _clean(value) == "":
+                return None
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.isna(parsed):
+                raise HTTPException(status_code=400, detail="Invalid date_of_birth")
+            return parsed.date()
+
         for index, row in df.fillna("").iterrows():
             row_number = index + 2
             try:
                 data = StudentCreate.model_validate(
                     {
-                        "email": str(row["email"]).strip(),
-                        "full_name": str(row["full_name"]).strip(),
-                        "password": str(row["password"]).strip(),
-                        "student_number": str(row["student_number"]).strip(),
-                        "department_id": int(row["department_id"]),
-                        "course_id": int(row["course_id"]),
+                        "admission_no": _clean(row.get("admission_no") or row.get("student_number")),
+                        "roll_no": _clean(row.get("roll_no")) or None,
+                        "full_name": _clean(row["full_name"]),
+                        "date_of_birth": _parse_optional_date(row.get("date_of_birth")),
+                        "student_mobile": _clean(row.get("student_mobile") or row.get("phone")) or None,
+                        "father_mobile": _clean(row.get("father_mobile")) or None,
                         "enrollment_year": int(row["enrollment_year"]),
                         "semester": int(row["semester"]),
                         "section": str(row["section"]).strip(),
                         "batch": str(row["batch"]).strip(),
-                        "phone": str(row["phone"]).strip() or None,
-                        "guardian_email": str(row["guardian_email"]).strip() or None,
+                        "guardian_email": _clean(row.get("guardian_email")) or None,
+                        "department_id": department.id,
+                        "course_id": course.id,
                     }
                 )
-                if data.email in seen_emails or data.student_number in seen_numbers:
+                email = self._student_email(data.admission_no)
+                if email in seen_emails or data.admission_no in seen_numbers:
                     raise HTTPException(status_code=400, detail="Duplicate student")
-                self._validate_unique_email(data.email)
-                self._validate_unique_student_number(data.student_number)
-                course = self._validate_course(data.course_id)
-                if course.department_id != data.department_id:
-                    raise HTTPException(status_code=400, detail="Student department must match course department")
+                self._validate_unique_email(email)
+                self._validate_unique_student_number(data.admission_no)
                 user = User(
-                    email=data.email,
+                    email=email,
                     full_name=data.full_name,
                     password_hash=None,
                     is_active=False,
@@ -261,21 +341,25 @@ class StudentService:
                 self.db.add(
                     Student(
                         user_id=user.id,
-                        student_number=data.student_number,
-                        department_id=data.department_id,
-                        course_id=data.course_id,
+                        student_number=data.admission_no,
+                        roll_no=data.roll_no or None,
+                        date_of_birth=data.date_of_birth,
+                        student_mobile=data.student_mobile,
+                        father_mobile=data.father_mobile,
+                        department_id=department.id,
+                        course_id=course.id,
                         enrollment_year=data.enrollment_year,
                         semester=data.semester,
                         section=data.section,
                         batch=data.batch,
-                        phone=data.phone,
+                        phone=data.student_mobile,
                         guardian_email=data.guardian_email,
                     )
                 )
                 self.db.commit()
                 inserted += 1
-                seen_emails.add(data.email)
-                seen_numbers.add(data.student_number)
+                seen_emails.add(email)
+                seen_numbers.add(data.admission_no)
             except Exception as exc:  # noqa: BLE001
                 self.db.rollback()
                 failed += 1

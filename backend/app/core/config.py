@@ -1,4 +1,6 @@
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,12 +18,14 @@ class Settings(BaseSettings):
     face_provider: str = "CPUExecutionProvider"
     face_similarity_threshold: float = 0.58
     face_detection_size: int = 640
+    face_upload_root: Path = Path("storage/face_uploads")
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from: str = "noreply@smartattend.local"
     frontend_url: str = "http://localhost:5173"
+    student_email_domain: str = "imsec.ac.in"
     refresh_token_expire_days: int = 30
     activation_token_expire_hours: int = 24
     reset_token_expire_hours: int = 1

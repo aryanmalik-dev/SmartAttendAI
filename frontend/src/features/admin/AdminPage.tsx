@@ -1,23 +1,40 @@
-import { Building2, GraduationCap, School, Settings, UserPlus } from "lucide-react";
+import { BarChart3, Building2, GraduationCap, Settings, Shapes, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card } from "../../components/ui/Card";
 
 const modules = [
-  { title: "Departments", description: "Manage department codes, names, and academic ownership.", icon: School, to: "/admin/departments" },
-  { title: "Faculty", description: "Register faculty profiles and assign departments.", icon: UserPlus, to: "/faculty" },
-  { title: "Students", description: "Register students and maintain enrollment records.", icon: GraduationCap, to: "/students" },
-  { title: "Classrooms", description: "Manage rooms, capacity, building, and camera references.", icon: Building2, to: "/classrooms" },
-  { title: "System Settings", description: "Configure recognition confidence thresholds and reports.", icon: Settings, to: "/admin" }
+  { title: "Dashboard", description: "Operational overview and live attendance metrics.", icon: BarChart3, to: "/" },
+  { title: "Departments", description: "Manage branches and link them to a course.", icon: Shapes, to: "/admin/departments" },
+  { title: "Faculty", description: "Register faculty and manage assignments.", icon: Users, to: "/faculty" },
+  { title: "Students", description: "Register students and enroll face images.", icon: GraduationCap, to: "/students" },
+  { title: "Courses", description: "Maintain programs, names, and abbreviations.", icon: Shapes, to: "/courses" },
+  { title: "Classrooms", description: "Manage classroom capacity and camera details.", icon: Building2, to: "/classrooms" },
+  { title: "Subjects", description: "Track teaching subjects and structure.", icon: Shapes, to: "/subjects" },
+  { title: "Assignments", description: "Bind faculty to subjects and sections.", icon: Users, to: "/subject-assignments" },
+  { title: "Settings", description: "Institution settings and recognition thresholds.", icon: Settings, to: "/admin" }
 ];
 
 export function AdminPage() {
   return (
-    <div className="space-y-5">
-      <div><h2 className="text-2xl font-bold text-slate-950">Admin Module</h2><p className="text-sm text-slate-500">Institution-wide setup and governance for SmartAttend AI.</p></div>
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs uppercase tracking-wide text-slate-400">Administration</p>
+        <h2 className="mt-1 text-2xl font-semibold text-slate-950">System Setup</h2>
+        <p className="mt-1 text-sm text-slate-500">Core operational modules for institution-wide management.</p>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {modules.map((module) => {
           const Icon = module.icon;
-          return <Link key={module.title} to={module.to}><Card className="h-full transition hover:border-brand-200 hover:shadow-lg"><Icon className="text-brand-600" size={24} /><h3 className="mt-4 text-lg font-semibold">{module.title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{module.description}</p></Card></Link>;
+          return (
+            <Link key={module.title} to={module.to}>
+              <Card className="h-full transition hover:border-brand-200 hover:shadow-lg">
+                <Icon className="text-brand-700" size={24} />
+                <h3 className="mt-4 text-lg font-semibold text-slate-950">{module.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{module.description}</p>
+              </Card>
+            </Link>
+          );
         })}
       </div>
     </div>

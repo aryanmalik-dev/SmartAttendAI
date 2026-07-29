@@ -11,9 +11,11 @@ class ORMModel(BaseModel):
 
 
 class DepartmentIn(BaseModel):
-    code: str = Field(min_length=2, max_length=30)
     name: str
+    abbreviation: str = Field(min_length=1, max_length=30)
+    course_id: int
     description: str | None = None
+    low_attendance_threshold: float = 75.0
 
 
 class DepartmentOut(DepartmentIn, ORMModel):
@@ -44,33 +46,45 @@ class FacultyOut(ORMModel):
 
 
 class StudentIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     user: UserCreate
-    student_number: str
+    admission_no: str = Field(alias="student_number")
+    roll_no: str | None = None
+    date_of_birth: date | None = None
+    student_mobile: str | None = None
+    father_mobile: str | None = None
     department_id: int
+    course_id: int
     enrollment_year: int
-    phone: str | None = None
+    semester: int
+    section: str
+    batch: str
     guardian_email: EmailStr | None = None
-    low_attendance_threshold: float = 75
 
 
 class StudentOut(ORMModel):
     id: int
+    admission_no: str
     student_number: str
+    roll_no: str | None
+    date_of_birth: date | None
+    student_mobile: str | None
+    father_mobile: str | None
     department_id: int
+    course_id: int
     enrollment_year: int
-    phone: str | None
+    semester: int
+    section: str
+    batch: str
     guardian_email: EmailStr | None
-    low_attendance_threshold: float
     user: LoginUserOut
 
 
 class CourseIn(BaseModel):
-    code: str
     name: str
-    department_id: int
-    faculty_id: int | None = None
-    semester: str | None = None
-    credits: int = 3
+    abbreviation: str
+    duration_years: int = 4
     is_active: bool = True
 
 

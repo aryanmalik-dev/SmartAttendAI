@@ -45,7 +45,7 @@ class AttendanceRecordReportOut(ORMModel):
     department_id: int
     department_name: str
     course_id: int
-    course_code: str
+    course_abbreviation: str
     course_name: str
     subject_id: int
     subject_code: str
@@ -81,7 +81,7 @@ class StudentAttendanceSummaryOut(ORMModel):
 class EntityAttendanceSummaryOut(ORMModel):
     entity_id: int
     entity_name: str
-    code: str | None = None
+    abbreviation: str | None = None
     total_records: int
     present: int
     absent: int

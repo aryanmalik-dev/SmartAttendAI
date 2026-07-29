@@ -59,9 +59,10 @@ class NotificationService:
     def low_attendance_alert(self, student_id: int) -> Notification:
         student = self._student_or_404(student_id)
         subject = "Low attendance alert"
+        threshold = student.department.low_attendance_threshold if student.department else 75.0
         message = (
             f"Student {student.user.full_name} ({student.student_number}) has low attendance.\n"
-            f"Current threshold: {student.low_attendance_threshold}%."
+            f"Current threshold: {threshold}%."
         )
         return self.send_student_alert(student_id, subject, message)
 

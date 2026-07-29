@@ -1,5 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.common import FacultyOut
+from app.schemas.subject import SubjectOut
+
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -23,3 +26,5 @@ class SubjectAssignmentUpdate(BaseModel):
 
 class SubjectAssignmentOut(SubjectAssignmentCreate, ORMModel):
     id: int
+    faculty: FacultyOut
+    subject: SubjectOut

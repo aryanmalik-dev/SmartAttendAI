@@ -31,6 +31,7 @@ frontend/dist/
 # Logs and runtime files
 logs/
 backend/logs/
+backend/storage/
 *.log
 
 # OS / editor files
@@ -38,4 +39,3 @@ backend/logs/
 Thumbs.db
 .idea/
 .vscode/
-

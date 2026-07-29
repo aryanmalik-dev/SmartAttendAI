@@ -6,15 +6,19 @@ class ORMModel(BaseModel):
 
 
 class DepartmentCreate(BaseModel):
-    code: str = Field(min_length=2, max_length=30)
     name: str = Field(min_length=2, max_length=160)
+    abbreviation: str = Field(min_length=1, max_length=30)
+    course_id: int
     description: str | None = None
+    low_attendance_threshold: float = Field(default=75.0, ge=0, le=100)
 
 
 class DepartmentUpdate(BaseModel):
-    code: str | None = Field(default=None, min_length=2, max_length=30)
     name: str | None = Field(default=None, min_length=2, max_length=160)
+    abbreviation: str | None = Field(default=None, min_length=1, max_length=30)
+    course_id: int | None = None
     description: str | None = None
+    low_attendance_threshold: float | None = Field(default=None, ge=0, le=100)
 
 
 class DepartmentOut(DepartmentCreate, ORMModel):

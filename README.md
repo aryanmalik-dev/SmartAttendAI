@@ -13,7 +13,13 @@ SmartAttend AI is a full-stack Intelligent Face Recognition Attendance & Classro
 
 ## Database
 
-The PostgreSQL schema is managed by Alembic. Face embeddings are stored in `face_embeddings.embedding` as JSONB vectors with model metadata. Recognition compares normalized ArcFace embeddings using cosine similarity and `FACE_SIMILARITY_THRESHOLD`.
+The PostgreSQL schema is managed by Alembic. The academic hierarchy is:
+
+- `courses`: top-level programs such as `BTech`
+- `departments`: branches associated with a course such as `CSE`, `IT`, or `CS`
+- `subjects`: branch and semester-specific subjects with codes
+
+Face embeddings are stored in `face_embeddings.embedding` as JSONB vectors with model metadata. Recognition compares normalized ArcFace embeddings using cosine similarity and `FACE_SIMILARITY_THRESHOLD`. Uploaded enrollment photos are written to `backend/storage/face_uploads/` by default, and the database stores their relative paths in `face_embeddings.image_path` so the original images remain available for future training or review.
 
 ## Local Setup
 
@@ -47,7 +53,9 @@ npm run dev
 
 `backend/requirements.txt` is the single backend dependency file. `backend/.env.example` is the backend template, `frontend/.env.example` is the frontend template, and the real `backend/.env` stays local only.
 
-The repository ignores local `.env` files, virtual environments, generated logs, build output, and `node_modules/`, so the Git history stays free of machine-specific or sensitive data. Rebuild your venv locally as needed; it will not be picked up by Git.
+The repository ignores local `.env` files, virtual environments, generated logs, build output, the backend face-upload storage directory, and `node_modules/`, so the Git history stays free of machine-specific or sensitive data. Rebuild your venv locally as needed; it will not be picked up by Git.
+
+Backend file storage can be configured with `FACE_UPLOAD_ROOT` in `backend/.env`. Keep it local and outside Git.
 
 Default seeded accounts:
 

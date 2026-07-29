@@ -14,7 +14,7 @@ from app.schemas.common import SettingsIn
 from app.schemas.course import CourseCreate, CourseOut, CourseUpdate
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
 from app.schemas.faculty import FacultyCreate, FacultyOut, FacultyUpdate
-from app.schemas.student import StudentCreate, StudentOut
+from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
 from app.schemas.subject import SubjectCreate, SubjectOut, SubjectUpdate
 from app.schemas.subject_assignment import SubjectAssignmentCreate, SubjectAssignmentOut, SubjectAssignmentUpdate
 from app.services.classroom import ClassroomService
@@ -319,6 +319,15 @@ def list_faculty(
     return page(_items(items, FacultyOut), total, p, size)
 
 
+@router.get("/faculty/me")
+def get_my_faculty(
+    user: User = Depends(require_roles(UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    item = FacultyService(db).get_by_user(user.id)
+    return ok(FacultyOut.model_validate(item).model_dump(mode="json"))
+
+
 @router.get("/faculty/{item_id}")
 def get_faculty(
     item_id: int,
@@ -398,6 +407,17 @@ def create_student(
     return ok(StudentOut.model_validate(item).model_dump(mode="json"), "Student created")
 
 
+@router.patch("/students/{item_id}")
+def update_student(
+    item_id: int,
+    payload: StudentUpdate,
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    item = StudentService(db).update_student(item_id, payload)
+    return ok(StudentOut.model_validate(item).model_dump(mode="json"), "Student updated")
+
+
 @router.post("/settings")
 def upsert_setting(
     payload: SettingsIn,
@@ -469,9 +489,9 @@ def import_courses(file: UploadFile = File(...), _: User = Depends(require_roles
 
 
 @router.get("/courses/export")
-def export_courses(file_format: str = "csv", search: str | None = None, sort: str | None = None, department_id: int | None = None, is_active: bool | None = None, _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)), db: Session = Depends(get_db)):
+def export_courses(file_format: str = "csv", search: str | None = None, sort: str | None = None, is_active: bool | None = None, _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)), db: Session = Depends(get_db)):
     filename, media_type = _download_filename("courses", file_format)
-    return _stream_bytes(CourseService(db).export(file_format, search=search, sort=sort, department_id=department_id, is_active=is_active), filename, media_type)
+    return _stream_bytes(CourseService(db).export(file_format, search=search, sort=sort, is_active=is_active), filename, media_type)
 
 
 @router.get("/courses/template")
@@ -532,8 +552,8 @@ def template_faculty(file_format: str = "csv", db: Session = Depends(get_db), _:
 
 
 @router.post("/students/import")
-def import_students(file: UploadFile = File(...), _: User = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(get_db)):
-    return ok(StudentService(db).import_file(file), "Students imported")
+def import_students(file: UploadFile = File(...), user: User = Depends(require_roles(UserRole.FACULTY)), db: Session = Depends(get_db)):
+    return ok(StudentService(db).import_file(file, user), "Students imported")
 
 
 @router.get("/students/export")
@@ -543,6 +563,6 @@ def export_students(file_format: str = "csv", search: str | None = None, sort: s
 
 
 @router.get("/students/template")
-def template_students(file_format: str = "csv", db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def template_students(file_format: str = "csv", db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.FACULTY))):
     filename, media_type = _download_filename("students_template", file_format)
     return _stream_bytes(StudentService(db).template(file_format), filename, media_type)

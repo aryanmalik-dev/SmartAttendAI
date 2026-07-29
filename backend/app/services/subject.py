@@ -47,9 +47,11 @@ class SubjectService:
 
     def create(self, data: SubjectCreate) -> Subject:
         course = self._validate_course(data.course_id)
-        self._validate_department(data.department_id)
-        if course.department_id != data.department_id:
-            raise HTTPException(status_code=400, detail="Subject department must match course department")
+        department = self.db.get(Department, data.department_id)
+        if not department:
+            raise HTTPException(status_code=404, detail="Department not found")
+        if department.course_id != course.id:
+            raise HTTPException(status_code=400, detail="Subject department must belong to the selected course")
         self._validate_unique(data.code)
         item = Subject(**data.model_dump())
         self.db.add(item)
@@ -104,9 +106,11 @@ class SubjectService:
         if "course_id" in values or "department_id" in values:
             course = self._validate_course(values.get("course_id", item.course_id))
             department_id = values.get("department_id", item.department_id)
-            self._validate_department(department_id)
-            if course.department_id != department_id:
-                raise HTTPException(status_code=400, detail="Subject department must match course department")
+            department = self.db.get(Department, department_id)
+            if not department:
+                raise HTTPException(status_code=404, detail="Department not found")
+            if department.course_id != course.id:
+                raise HTTPException(status_code=400, detail="Subject department must belong to the selected course")
         if "code" in values:
             self._validate_unique(values["code"], exclude_id=item.id)
         for key, value in values.items():
@@ -181,9 +185,11 @@ class SubjectService:
                 if data.code in seen or self.db.scalar(select(Subject).where(Subject.code == data.code)):
                     raise HTTPException(status_code=400, detail="Subject code already exists")
                 course = self._validate_course(data.course_id)
-                self._validate_department(data.department_id)
-                if course.department_id != data.department_id:
-                    raise HTTPException(status_code=400, detail="Subject department must match course department")
+                department = self.db.get(Department, data.department_id)
+                if not department:
+                    raise HTTPException(status_code=404, detail="Department not found")
+                if department.course_id != course.id:
+                    raise HTTPException(status_code=400, detail="Subject department must belong to the selected course")
                 self.db.add(Subject(**data.model_dump()))
                 self.db.commit()
                 inserted += 1

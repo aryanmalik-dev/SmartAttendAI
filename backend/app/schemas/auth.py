@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models.enums import UserRole
 
@@ -24,16 +24,22 @@ class LoginUserOut(ORMModel):
     email_verified: bool
     roles: list[UserRole]
 
+    @model_validator(mode="before")
     @classmethod
-    def model_validate(cls, obj):
-        return cls(
-            id=obj.id,
-            email=obj.email,
-            full_name=obj.full_name,
-            is_active=obj.is_active,
-            email_verified=obj.email_verified,
-            roles=[r.role for r in obj.roles],
-        )
+    def _normalize_roles(cls, data):
+        if hasattr(data, "roles"):
+            return {
+                "id": data.id,
+                "email": data.email,
+                "full_name": data.full_name,
+                "is_active": data.is_active,
+                "email_verified": data.email_verified,
+                "roles": [role.role if hasattr(role, "role") else role for role in data.roles],
+            }
+        if isinstance(data, dict) and "roles" in data:
+            roles = data.get("roles") or []
+            data["roles"] = [role.role if hasattr(role, "role") else role for role in roles]
+        return data
 
 
 class TokenOut(BaseModel):

@@ -116,9 +116,9 @@ class SearchService:
             select(
                 Department.id.label("id"),
                 Department.name.label("title"),
-                Department.code.label("subtitle"),
+                Department.abbreviation.label("subtitle"),
             )
-            .where(or_(Department.name.ilike(query), Department.code.ilike(query), Department.description.ilike(query)))
+            .where(or_(Department.name.ilike(query), Department.abbreviation.ilike(query), Department.description.ilike(query)))
             .limit(limit)
         ).mappings().all()
         return [
@@ -131,12 +131,12 @@ class SearchService:
             select(
                 Course.id.label("id"),
                 Course.name.label("title"),
-                Course.code.label("subtitle"),
+                Course.abbreviation.label("subtitle"),
                 Department.name.label("department_name"),
             )
             .select_from(Course)
-            .join(Department, Course.department_id == Department.id)
-            .where(or_(Course.name.ilike(query), Course.code.ilike(query), Course.abbreviation.ilike(query), Department.name.ilike(query)))
+            .join(Department, Department.course_id == Course.id)
+            .where(or_(Course.name.ilike(query), Course.abbreviation.ilike(query), Department.name.ilike(query)))
             .limit(limit)
         ).mappings().all()
         return [

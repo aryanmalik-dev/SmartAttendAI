@@ -100,15 +100,17 @@ class User(Base, TimestampMixin):
 class Department(Base, TimestampMixin):
     __tablename__ = "departments"
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    abbreviation: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("courses.id"), nullable=True, index=True)
+    low_attendance_threshold: Mapped[float] = mapped_column(default=75.0, nullable=False)
+    course: Mapped[Course | None] = relationship(
+        back_populates="departments",
+        foreign_keys=[course_id],
+    )
     subjects: Mapped[list[Subject]] = relationship(
         back_populates="department",
-    )
-
-    courses: Mapped[list[Course]] = relationship(
-        back_populates="department"
     )
 
     students: Mapped[list[Student]] = relationship(
@@ -153,6 +155,22 @@ class Student(Base):
         nullable=False,
     )
 
+    roll_no: Mapped[str | None] = mapped_column(
+        String(60),
+    )
+
+    date_of_birth: Mapped[date | None] = mapped_column(
+        Date,
+    )
+
+    student_mobile: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
+    father_mobile: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
     department_id: Mapped[int] = mapped_column(
         ForeignKey("departments.id"),
         nullable=False,
@@ -191,11 +209,6 @@ class Student(Base):
         String(255),
     )
 
-    low_attendance_threshold: Mapped[float] = mapped_column(
-        default=75.0,
-        nullable=False,
-    )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -231,33 +244,35 @@ class Student(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def admission_no(self) -> str:
+        return self.student_number
+
+    @property
+    def full_name(self) -> str:
+        return self.user.full_name if self.user else ""
+
+    @property
+    def email(self) -> str:
+        return self.user.email if self.user else ""
+
 
 class Course(Base):
     __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    code: Mapped[str] = mapped_column(
-        String(40),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
-
     name: Mapped[str] = mapped_column(
         String(180),
+        unique=True,
         nullable=False,
     )
 
     abbreviation: Mapped[str] = mapped_column(
         String(40),
-        nullable=False,
-    )
-
-    department_id: Mapped[int] = mapped_column(
-        ForeignKey("departments.id"),
-        nullable=False,
+        unique=True,
         index=True,
+        nullable=False,
     )
 
     duration_years: Mapped[int] = mapped_column(
@@ -283,8 +298,9 @@ class Course(Base):
         nullable=False,
     )
 
-    department: Mapped[Department] = relationship(
-        back_populates="courses"
+    departments: Mapped[list[Department]] = relationship(
+        back_populates="course",
+        foreign_keys="Department.course_id",
     )
 
     subjects: Mapped[list[Subject]] = relationship(

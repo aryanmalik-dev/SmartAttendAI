@@ -109,6 +109,16 @@ class FacultyService:
     def get(self, item_id: int) -> Faculty:
         return self._get(item_id)
 
+    def get_by_user(self, user_id: int) -> Faculty:
+        item = self.db.scalar(
+            select(Faculty)
+            .options(selectinload(Faculty.user).selectinload(User.roles))
+            .where(Faculty.user_id == user_id)
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="Faculty not found")
+        return item
+
     def update(self, item_id: int, data: FacultyUpdate) -> Faculty:
         item = self._get(item_id)
         values = data.model_dump(exclude_unset=True)
