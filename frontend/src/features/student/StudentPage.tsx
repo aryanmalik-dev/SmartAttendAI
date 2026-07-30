@@ -335,7 +335,7 @@ function StudentCreateModal({
         )}
 
         <div className="sm:col-span-2 flex justify-end gap-3">
-          <Button type="button" onClick={onClose} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" disabled={createStudent.isPending || coursesQuery.isLoading || departmentsQuery.isLoading}>
@@ -491,7 +491,7 @@ function StudentEditModal({
         )}
 
         <div className="sm:col-span-2 flex justify-end gap-3">
-          <Button type="button" onClick={onClose} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" disabled={updateStudent.isPending}>
@@ -693,7 +693,7 @@ function FaceEnrollmentModal({ target, onClose, onSuccess }: { target: Enrollmen
         {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>}
 
         <div className="flex justify-end gap-3">
-          <Button type="button" onClick={closeAndReset} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">Cancel</Button>
+          <Button type="button" variant="secondary" onClick={closeAndReset}>Cancel</Button>
           <Button type="button" onClick={submit} disabled={enroll.isPending}>{enroll.isPending ? "Processing..." : "Submit Enrollment"}</Button>
         </div>
       </div>
@@ -1113,7 +1113,7 @@ export function StudentPage() {
         <div className="flex flex-wrap gap-2">
           {canManageImports && (
             <>
-              <Button
+              <button
                 type="button"
                 onClick={async () => {
                   try {
@@ -1124,10 +1124,10 @@ export function StudentPage() {
                     setToast("Student template download failed");
                   }
                 }}
-                className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm transition-all"
               >
                 <FileSpreadsheet size={16} /> Template
-              </Button>
+              </button>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
                 <Upload size={16} />
                 Import Excel

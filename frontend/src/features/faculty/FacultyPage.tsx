@@ -200,44 +200,15 @@ export function FacultyPage() {
         </Button>
       </div>
 
-      <Card>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-          <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3">
-            <Search size={18} className="text-slate-400" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search faculty" className="border-0 px-0 focus:ring-0" />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <Upload size={16} />
-              Import
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (file) await handleImport(file);
-                  event.target.value = "";
-                }}
-              />
-            </label>
-            <Button type="button" onClick={() => void handleExport("csv")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-              <FileText size={16} />
-              CSV
-            </Button>
-            <Button type="button" onClick={() => void handleExport("xlsx")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-              <FileSpreadsheet size={16} />
-              Excel
-            </Button>
-            <Button type="button" onClick={() => void handleTemplate("csv")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-              <Download size={16} />
-              Template
-            </Button>
-            <Button type="button" onClick={() => void handleTemplate("xlsx")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-              <FileSpreadsheet size={16} />
-              Template Excel
-            </Button>
-          </div>
+      <Card className="p-4">
+        <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 focus-within:border-zinc-900 focus-within:ring-1 focus-within:ring-zinc-900 transition-all">
+          <Search size={18} className="text-zinc-400 shrink-0" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search faculty by name, employee ID, email, or department..."
+            className="border-0 px-0 focus:ring-0 text-sm text-zinc-900 placeholder:text-zinc-400 w-full"
+          />
         </div>
       </Card>
 
@@ -270,13 +241,21 @@ export function FacultyPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{faculty.designation ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" onClick={() => openEdit(faculty)} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(faculty)}
+                        className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-200 border border-zinc-200/80 transition-all shadow-sm"
+                      >
                         Edit
-                      </Button>
-                      <Button type="button" onClick={() => remove.mutate(faculty.id)} className="bg-white text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50">
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove.mutate(faculty.id)}
+                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 border border-red-200/80 transition-all shadow-sm"
+                      >
                         Delete
-                      </Button>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -400,8 +379,8 @@ export function FacultyPage() {
               </label>
             </>
           )}
-          <div className="sm:col-span-2 flex justify-end gap-3">
-            <Button type="button" onClick={() => setOpen(false)} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+          <div className="sm:col-span-2 flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending || departments.isLoading || departmentItems.length === 0}>

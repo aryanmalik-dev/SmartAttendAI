@@ -9,7 +9,8 @@ import type {
   LiveAttendanceStats,
   NotificationItem,
   Page,
-  SearchResult,
+  GlobalSearchResult,
+  SearchResultItem,
   User
 } from "./types";
 
@@ -110,7 +111,7 @@ export async function listNotifications(params: Record<string, string | number |
   return data.data;
 }
 
-export async function searchGlobal(q: string, limit = 20) {
-  const { data } = await api.get<ApiResponse<SearchResult[]>>("/search", { params: { q, limit } });
+export async function searchGlobal(q: string, limit = 50) {
+  const { data } = await api.get<ApiResponse<GlobalSearchResult>>("/search", { params: { q, limit } });
   return data.data;
 }

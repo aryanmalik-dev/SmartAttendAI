@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Toast } from "../../components/ui/Toast";
 import { api, downloadFromResponse, exportResource, listResource } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 
 type FieldType = "text" | "number" | "boolean" | "date";
 
@@ -67,14 +68,21 @@ export function ResourcePage({
   relations = [],
   itemName,
   filters = [],
-  importable = true,
-  exportable = true,
-  templateable = true,
+  importable = false,
+  exportable = false,
+  templateable = false,
   canCreate = true,
   canEdit = true,
   canDelete = true,
   defaultSort = ""
 }: ResourcePageProps) {
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.roles.includes("admin"));
+
+  const allowCreate = canCreate && isAdmin;
+  const allowEdit = canEdit && isAdmin;
+  const allowDelete = canDelete && isAdmin;
+
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState(defaultSort);
@@ -217,7 +225,7 @@ export function ResourcePage({
           <h2 className="mt-1 text-2xl font-semibold text-slate-950">{title}</h2>
           <p className="mt-1 text-sm text-slate-500">Manage records with search, filters, export, and template downloads.</p>
         </div>
-        {canCreate && (
+        {allowCreate && (
           <Button type="button" onClick={openCreate}>
             <Plus size={16} />
             Add {itemName ?? title.slice(0, -1)}
@@ -265,54 +273,56 @@ export function ResourcePage({
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {importable && (
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <Upload size={16} />
-              Import
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    try {
-                      await handleImport(file);
-                    } catch {
-                      setToast("Import failed");
+        {(importable || exportable || templateable) && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {importable && (
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <Upload size={16} />
+                Import
+                <input
+                  type="file"
+                  accept=".csv,.xlsx"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      try {
+                        await handleImport(file);
+                      } catch {
+                        setToast("Import failed");
+                      }
                     }
-                  }
-                  event.target.value = "";
-                }}
-              />
-            </label>
-          )}
-          {exportable && (
-            <>
-              <Button type="button" onClick={() => handleExport("csv")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <Download size={16} />
-                CSV
-              </Button>
-              <Button type="button" onClick={() => handleExport("xlsx")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <FileSpreadsheet size={16} />
-                Excel
-              </Button>
-            </>
-          )}
-          {templateable && (
-            <>
-              <Button type="button" onClick={() => void handleTemplate("csv")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <FileText size={16} />
-                Template CSV
-              </Button>
-              <Button type="button" onClick={() => void handleTemplate("xlsx")} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                <FileSpreadsheet size={16} />
-                Template Excel
-              </Button>
-            </>
-          )}
-        </div>
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            {exportable && (
+              <>
+                <button type="button" onClick={() => handleExport("csv")} className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm transition-all">
+                  <Download size={15} />
+                  CSV
+                </button>
+                <button type="button" onClick={() => handleExport("xlsx")} className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm transition-all">
+                  <FileSpreadsheet size={15} />
+                  Excel
+                </button>
+              </>
+            )}
+            {templateable && (
+              <>
+                <button type="button" onClick={() => void handleTemplate("csv")} className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm transition-all">
+                  <FileText size={15} />
+                  Template CSV
+                </button>
+                <button type="button" onClick={() => void handleTemplate("xlsx")} className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm transition-all">
+                  <FileSpreadsheet size={15} />
+                  Template Excel
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card className="overflow-hidden p-0">
@@ -325,7 +335,7 @@ export function ResourcePage({
                     {titleize(field)}
                   </th>
                 ))}
-                {(canEdit || canDelete) && <th className="px-4 py-3 font-medium">Actions</th>}
+                {(allowEdit || allowDelete) && <th className="px-4 py-3 font-medium">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -341,25 +351,29 @@ export function ResourcePage({
                         <div className="truncate">{displayValue(field, row[field])}</div>
                       </td>
                     ))}
-                    {(canEdit || canDelete) && (
+                    {(allowEdit || allowDelete) && (
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {canEdit && (
-                            <Button type="button" onClick={() => openEdit(row)} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                              <PencilLine size={15} />
+                        <div className="flex items-center gap-2">
+                          {allowEdit && (
+                            <button
+                              type="button"
+                              onClick={() => openEdit(row)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-200 border border-zinc-200/80 transition-all shadow-sm"
+                            >
+                              <PencilLine size={14} />
                               Edit
-                            </Button>
+                            </button>
                           )}
-                          {canDelete && (
-                            <Button
+                          {allowDelete && (
+                            <button
                               type="button"
                               onClick={() => remove.mutate(Number(row.id))}
-                              className="bg-white text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 border border-red-200/80 transition-all shadow-sm disabled:opacity-50"
                               disabled={remove.isPending}
                             >
-                              <Trash2 size={15} />
+                              <Trash2 size={14} />
                               Delete
-                            </Button>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -442,8 +456,8 @@ export function ResourcePage({
               );
             })}
           </div>
-          <div className="flex justify-end gap-3">
-            <Button type="button" onClick={() => setOpen(false)} className="bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="button" onClick={submitForm} disabled={mutate.isPending || relationQueries.some((query) => query.isLoading)}>

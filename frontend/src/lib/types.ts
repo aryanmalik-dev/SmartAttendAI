@@ -130,11 +130,18 @@ export type LiveAttendanceState = {
   can_stop: boolean;
 };
 
-export type SearchResult = {
+export type SearchResultItem = {
   entity_type: string;
   id: number;
   title: string;
   subtitle?: string;
   status?: string;
-  route?: string;
+  meta?: Record<string, string | number | null | undefined>;
 };
+
+export type GlobalSearchResult = {
+  query: string;
+  total: number;
+  items: SearchResultItem[];
+};
+
