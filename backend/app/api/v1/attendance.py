@@ -18,13 +18,13 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 @router.get("/sessions")
 def list_sessions(
-    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
     db: Session = Depends(get_db),
     p: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = None,
 ):
-    items, total = AttendanceSessionService(db).list(p, size, search)
+    items, total = AttendanceSessionService(db).list(p, size, search, current_user=current_user)
     return page([AttendanceSessionOut.model_validate(item).model_dump(mode="json") for item in items], total, p, size)
 
 

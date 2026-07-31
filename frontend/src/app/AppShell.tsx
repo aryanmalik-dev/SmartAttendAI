@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarCheck,
   GraduationCap,
+  Layers,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -36,6 +37,7 @@ const nav: NavItem[] = [
 
   // Attendance Operations
   { to: "/attendance", label: "Mark Attendance", icon: CalendarCheck, roles: ["admin", "faculty"], section: "Attendance Operations" },
+  { to: "/attendance/sessions", label: "Sessions Hub", icon: Layers, roles: ["admin", "faculty"], section: "Attendance Operations" },
   { to: "/monitoring", label: "Vision Stream", icon: Monitor, roles: ["admin", "faculty"], section: "Attendance Operations" },
   { to: "/reports", label: "Reports & Logs", icon: BookOpen, roles: ["admin", "faculty"], section: "Attendance Operations" },
   { to: "/notifications", label: "Notifications", icon: Bell, roles: ["admin", "faculty"], section: "Attendance Operations" },
@@ -126,6 +128,7 @@ export function AppShell() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.to === "/" || item.to === "/attendance"}
                 onClick={() => handleNavigate(item.to)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium transition ${

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -11,7 +11,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.entities import ActivationToken, User, PasswordResetToken
+from app.models.entities import ActivationToken, Faculty, PasswordResetToken, Student, User
 from app.schemas.auth import LoginIn, LoginUserOut, TokenOut
 from app.services.email import (
     send_activation_email,
@@ -25,39 +25,25 @@ class AuthService:
         self.db = db
 
     def login(self, payload: LoginIn):
+        email = payload.email.strip().lower()
 
         user = self.db.scalar(
-            select(User).where(User.email == payload.email)
+            select(User).where(func.lower(User.email) == email)
         )
 
-        if not user:
+        if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-            )
-
-        if not user.password_hash:
-            raise HTTPException(
-                status_code=403,
-                detail="Account not activated",
-            )
-
-        if not verify_password(
-            payload.password,
-            user.password_hash,
-        ):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid credentials",
+                detail="Authentication failed. Check your email and password.",
             )
 
         if not user.is_active:
             raise HTTPException(
-                status_code=403,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account disabled",
             )
 
-        roles = [r.role.value for r in user.roles]
+        roles = [r.role.value if hasattr(r, "role") else r.value if hasattr(r, "value") else str(r) for r in user.roles]
 
         access = create_access_token(
             str(user.id),

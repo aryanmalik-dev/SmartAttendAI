@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import pandas as pd
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import hash_password
-from app.models.entities import Department, Faculty, User, UserRoleAssignment
+from app.models.entities import (
+    AttendanceRecord,
+    AttendanceSession,
+    Department,
+    Faculty,
+    Notification,
+    SubjectAssignment,
+    User,
+    UserRoleAssignment,
+)
 from app.models.enums import UserRole
 from app.schemas.faculty import FacultyCreate, FacultyUpdate
 from app.services.data_io import (
@@ -151,11 +160,35 @@ class FacultyService:
     def delete(self, item_id: int) -> None:
         item = self._get(item_id)
         try:
+            # 1. Fetch all subject assignment IDs for this faculty
+            assignment_ids = self.db.scalars(
+                select(SubjectAssignment.id).where(SubjectAssignment.faculty_id == item.id)
+            ).all()
+
+            if assignment_ids:
+                # 2. Fetch all session IDs associated with these subject assignments
+                session_ids = self.db.scalars(
+                    select(AttendanceSession.id).where(AttendanceSession.subject_assignment_id.in_(assignment_ids))
+                ).all()
+
+                if session_ids:
+                    # 3. Clean up attendance records for these sessions
+                    self.db.execute(delete(AttendanceRecord).where(AttendanceRecord.session_id.in_(session_ids)))
+                    self.db.execute(delete(AttendanceSession).where(AttendanceSession.id.in_(session_ids)))
+
+                # 4. Clean up subject assignments
+                self.db.execute(delete(SubjectAssignment).where(SubjectAssignment.id.in_(assignment_ids)))
+
+            # 5. Nullify marked_by_id on attendance records marked by this user & delete user notifications
+            self.db.execute(update(AttendanceRecord).where(AttendanceRecord.marked_by_id == item.user_id).values(marked_by_id=None))
+            self.db.execute(delete(Notification).where(Notification.user_id == item.user_id))
+
+            # 6. Delete faculty user account
             self.db.delete(item.user)
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            raise HTTPException(status_code=409, detail="Faculty cannot be deleted while it is in use") from exc
+            raise HTTPException(status_code=409, detail="Faculty cannot be deleted due to dependent records constraint") from exc
 
     def export_rows(self, search: str | None = None, sort: str | None = None, department_id: int | None = None) -> pd.DataFrame:
         items, _ = self.list(page=1, size=1000000, search=search, sort=sort, department_id=department_id)

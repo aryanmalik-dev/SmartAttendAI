@@ -13,6 +13,8 @@ import { ReportsPage } from "../features/reports/ReportsPage";
 import { SearchPage } from "../features/search/SearchPage";
 import { StudentPage } from "../features/student/StudentPage";
 
+import { SessionManagementPage } from "../features/attendance/SessionManagementPage";
+
 function Protected() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <div className="grid min-h-screen place-items-center text-sm font-medium text-slate-500">Loading SmartAttend AI...</div>;
@@ -32,6 +34,7 @@ export const router = createBrowserRouter([
       { path: "faculty", element: <FacultyPage /> },
       { path: "students", element: <StudentPage /> },
       { path: "attendance", element: <AttendancePage /> },
+      { path: "attendance/sessions", element: <SessionManagementPage /> },
       { path: "monitoring", element: <MonitoringPage /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "notifications", element: <NotificationsPage /> },

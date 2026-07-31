@@ -1,9 +1,10 @@
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.models.entities import AttendanceSession, Classroom, SubjectAssignment
+from app.models.entities import AttendanceSession, Classroom, Faculty, SubjectAssignment, User
+from app.models.enums import UserRole
 from app.schemas.attendance_session import AttendanceSessionCreate, AttendanceSessionUpdate
 
 
@@ -11,8 +12,15 @@ class AttendanceSessionService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _query(self):
+        return select(AttendanceSession).options(
+            selectinload(AttendanceSession.subject_assignment).selectinload(SubjectAssignment.subject),
+            selectinload(AttendanceSession.subject_assignment).selectinload(SubjectAssignment.faculty).selectinload(Faculty.user),
+            selectinload(AttendanceSession.classroom),
+        )
+
     def _get(self, item_id: int) -> AttendanceSession:
-        item = self.db.get(AttendanceSession, item_id)
+        item = self.db.scalar(self._query().where(AttendanceSession.id == item_id))
         if not item:
             raise HTTPException(status_code=404, detail="Attendance session not found")
         return item
@@ -36,11 +44,18 @@ class AttendanceSessionService:
             self.db.rollback()
             raise HTTPException(status_code=400, detail="Attendance session could not be created") from exc
         self.db.refresh(item)
-        return item
+        return self._get(item.id)
 
-    def list(self, page: int, size: int, search: str | None = None) -> tuple[list[AttendanceSession], int]:
-        stmt = select(AttendanceSession).order_by(AttendanceSession.session_date.desc(), AttendanceSession.start_time.desc())
+    def list(self, page: int, size: int, search: str | None = None, current_user: User | None = None) -> tuple[list[AttendanceSession], int]:
+        stmt = self._query().order_by(AttendanceSession.session_date.desc(), AttendanceSession.start_time.desc())
         count_stmt = select(func.count()).select_from(AttendanceSession)
+
+        if current_user and UserRole.FACULTY in [r.role for r in current_user.roles] and UserRole.ADMIN not in [r.role for r in current_user.roles]:
+            faculty_id = self.db.scalar(select(Faculty.id).where(Faculty.user_id == current_user.id))
+            if faculty_id:
+                stmt = stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
+                count_stmt = count_stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
+
         if search:
             criteria = AttendanceSession.notes.ilike(f"%{search}%")
             stmt = stmt.where(criteria)

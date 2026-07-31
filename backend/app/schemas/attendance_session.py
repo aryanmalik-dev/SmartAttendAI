@@ -29,5 +29,39 @@ class AttendanceSessionUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class SubjectNestedOut(ORMModel):
+    id: int
+    code: str
+    name: str
+
+
+class FacultyUserOut(ORMModel):
+    full_name: str
+    email: str
+
+
+class FacultyNestedOut(ORMModel):
+    id: int
+    employee_id: str
+    user: FacultyUserOut | None = None
+
+
+class SubjectAssignmentNestedOut(ORMModel):
+    id: int
+    section: str
+    academic_year: str
+    subject: SubjectNestedOut | None = None
+    faculty: FacultyNestedOut | None = None
+
+
+class ClassroomNestedOut(ORMModel):
+    id: int
+    name: str
+    building: str
+
+
 class AttendanceSessionOut(AttendanceSessionCreate, ORMModel):
     id: int
+    subject_assignment: SubjectAssignmentNestedOut | None = None
+    classroom: ClassroomNestedOut | None = None
+

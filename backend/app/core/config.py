@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "noreply@smartattend.local"
     frontend_url: str = "http://localhost:5173"
-    student_email_domain: str = "imsec.ac.in"
+    student_email_domain: str = "smartattend.ai"
     refresh_token_expire_days: int = 30
     activation_token_expire_hours: int = 24
     reset_token_expire_hours: int = 1

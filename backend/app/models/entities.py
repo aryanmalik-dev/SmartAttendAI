@@ -534,7 +534,7 @@ class AttendanceRecord(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("attendance_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
     student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True, nullable=False)
-    marked_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    marked_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     status: Mapped[AttendanceStatus] = mapped_column(Enum(AttendanceStatus), default=AttendanceStatus.PRESENT)
     confidence: Mapped[float | None] = mapped_column(Float)
     source: Mapped[AttendanceSource] = mapped_column(Enum(AttendanceSource), default=AttendanceSource.FACE)
@@ -562,7 +562,7 @@ class FaceEmbedding(Base, TimestampMixin):
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     channel: Mapped[str] = mapped_column(String(40), default="email")
     subject: Mapped[str] = mapped_column(String(255))
     message: Mapped[str] = mapped_column(Text)
