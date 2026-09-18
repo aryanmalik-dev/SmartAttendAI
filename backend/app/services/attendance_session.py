@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.entities import AttendanceSession, Classroom, Faculty, SubjectAssignment, User
+from app.models.entities import AttendanceSession, Classroom, Faculty, Student, Subject, SubjectAssignment, User
 from app.models.enums import UserRole
 from app.schemas.attendance_session import AttendanceSessionCreate, AttendanceSessionUpdate
 
@@ -50,11 +50,28 @@ class AttendanceSessionService:
         stmt = self._query().order_by(AttendanceSession.session_date.desc(), AttendanceSession.start_time.desc())
         count_stmt = select(func.count()).select_from(AttendanceSession)
 
-        if current_user and UserRole.FACULTY in [r.role for r in current_user.roles] and UserRole.ADMIN not in [r.role for r in current_user.roles]:
-            faculty_id = self.db.scalar(select(Faculty.id).where(Faculty.user_id == current_user.id))
-            if faculty_id:
-                stmt = stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
-                count_stmt = count_stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
+        if current_user:
+            roles = [r.role for r in current_user.roles]
+            if UserRole.FACULTY in roles and UserRole.ADMIN not in roles:
+                faculty_id = self.db.scalar(select(Faculty.id).where(Faculty.user_id == current_user.id))
+                if faculty_id:
+                    stmt = stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
+                    count_stmt = count_stmt.join(AttendanceSession.subject_assignment).where(SubjectAssignment.faculty_id == faculty_id)
+            elif UserRole.STUDENT in roles and UserRole.ADMIN not in roles and UserRole.FACULTY not in roles:
+                student = self.db.scalar(select(Student).where(Student.user_id == current_user.id))
+                if student:
+                    stmt = stmt.join(AttendanceSession.subject_assignment).join(Subject, SubjectAssignment.subject_id == Subject.id).where(
+                        SubjectAssignment.section == student.section,
+                        Subject.course_id == student.course_id,
+                        Subject.department_id == student.department_id,
+                        Subject.semester == student.semester,
+                    )
+                    count_stmt = count_stmt.join(AttendanceSession.subject_assignment).join(Subject, SubjectAssignment.subject_id == Subject.id).where(
+                        SubjectAssignment.section == student.section,
+                        Subject.course_id == student.course_id,
+                        Subject.department_id == student.department_id,
+                        Subject.semester == student.semester,
+                    )
 
         if search:
             criteria = AttendanceSession.notes.ilike(f"%{search}%")

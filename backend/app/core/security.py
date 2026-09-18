@@ -47,32 +47,41 @@ def create_access_token(
     claims: dict[str, Any] | None = None,
 ) -> str:
     settings = get_settings()
+    token_claims = {"type": "access"}
+    if claims:
+        token_claims.update(claims)
 
     return _create_token(
         subject,
         timedelta(minutes=settings.access_token_expire_minutes),
-        claims,
+        token_claims,
     )
 
 
 def create_refresh_token(subject: str) -> str:
+    settings = get_settings()
     return _create_token(
         subject,
-        timedelta(days=30),
+        timedelta(days=settings.refresh_token_expire_days),
+        {"type": "refresh"},
     )
 
 
 def create_activation_token(subject: str) -> str:
+    settings = get_settings()
     return _create_token(
         subject,
-        timedelta(days=1),
+        timedelta(hours=settings.activation_token_expire_hours),
+        {"type": "activation"},
     )
 
 
 def create_reset_password_token(subject: str) -> str:
+    settings = get_settings()
     return _create_token(
         subject,
-        timedelta(hours=1),
+        timedelta(hours=settings.reset_token_expire_hours),
+        {"type": "reset"},
     )
 
 

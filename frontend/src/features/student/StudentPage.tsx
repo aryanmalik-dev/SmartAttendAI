@@ -16,6 +16,7 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
+  Trash2,
   Upload,
   UserCheck,
   Users,
@@ -232,7 +233,7 @@ function StudentCreateModal({
   });
 
   const admissionNo = form.watch("admission_no");
-  const generatedEmail = admissionNo ? `${admissionNo}@imsec.ac.in` : "";
+  const generatedEmail = admissionNo ? `${admissionNo}@smartattend.ai` : "";
 
   return (
     <Modal title="Add New Student (Admin Only)" open={open} onClose={onClose}>
@@ -853,6 +854,25 @@ export function StudentPage() {
     }
   }
 
+  const deleteStudentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return (await api.delete(`/students/${id}`)).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setToast("Student deleted successfully");
+    },
+    onError: (err) => {
+      setToast(errorMessage(err));
+    }
+  });
+
+  function handleDeleteStudent(student: StudentSummary) {
+    if (window.confirm(`Are you sure you want to permanently delete student ${student.full_name} (${student.admission_no ?? student.student_number ?? ""})? This will remove all their records and biometric photos.`)) {
+      deleteStudentMutation.mutate(student.id);
+    }
+  }
+
   // Student Self-Service Portal
   if (isStudent) {
     return (
@@ -1037,13 +1057,25 @@ export function StudentPage() {
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            onClick={() => setEditingStudent(student)}
-                            className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
-                          >
-                            <PencilLine size={13} /> Edit
-                          </Button>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              onClick={() => setEditingStudent(student)}
+                              className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                            >
+                              <PencilLine size={13} /> Edit
+                            </Button>
+                            {isAdmin && (
+                              <Button
+                                type="button"
+                                onClick={() => handleDeleteStudent(student)}
+                                disabled={deleteStudentMutation.isPending}
+                                className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50"
+                              >
+                                <Trash2 size={13} /> Delete
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1365,13 +1397,25 @@ export function StudentPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2">
-                        <Button
-                          type="button"
-                          onClick={() => setEditingStudent(student)}
-                          className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
-                        >
-                          <PencilLine size={13} /> Edit
-                        </Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            onClick={() => setEditingStudent(student)}
+                            className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                          >
+                            <PencilLine size={13} /> Edit
+                          </Button>
+                          {isAdmin && (
+                            <Button
+                              type="button"
+                              onClick={() => handleDeleteStudent(student)}
+                              disabled={deleteStudentMutation.isPending}
+                              className="h-8 whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

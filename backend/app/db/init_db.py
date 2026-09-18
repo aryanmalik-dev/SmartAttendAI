@@ -39,7 +39,11 @@ def seed(db: Session) -> None:
         student_mobile="+91-9000000003",
         father_mobile="+91-9000000004",
         department_id=cse.id,
+        course_id=btech.id,
         enrollment_year=2026,
+        semester=1,
+        section="A",
+        batch="2026",
         guardian_email="guardian@example.com",
     )
     db.add_all([faculty, student])

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 @router.get("/sessions")
 def list_sessions(
-    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY, UserRole.STUDENT)),
     db: Session = Depends(get_db),
     p: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -59,6 +59,17 @@ def update_session(
     return ok(AttendanceSessionOut.model_validate(item).model_dump(mode="json"), "Attendance session updated")
 
 
+@router.post("/sessions/{session_id}/end")
+def end_session(
+    session_id: int,
+    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+    db: Session = Depends(get_db),
+):
+    from app.services.live_attendance import LiveAttendanceService
+    session = LiveAttendanceService(db).stop(session_id, user)
+    return ok(AttendanceSessionOut.model_validate(session).model_dump(mode="json"), "Session ended")
+
+
 @router.delete("/sessions/{session_id}")
 def delete_session(
     session_id: int,
@@ -87,11 +98,11 @@ def manual(session_id: int, payload: ManualAttendanceIn, user: User = Depends(re
 
 @router.get("/records")
 def records(db: Session = Depends(get_db), p: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), session_id: int | None = None, student_id: int | None = None):
-    stmt = select(AttendanceRecord).order_by(AttendanceRecord.marked_at.desc())
+    base_stmt = select(AttendanceRecord)
     if session_id:
-        stmt = stmt.where(AttendanceRecord.session_id == session_id)
+        base_stmt = base_stmt.where(AttendanceRecord.session_id == session_id)
     if student_id:
-        stmt = stmt.where(AttendanceRecord.student_id == student_id)
-    total = len(db.scalars(stmt).all())
-    items = db.scalars(stmt.offset((p - 1) * size).limit(size)).all()
+        base_stmt = base_stmt.where(AttendanceRecord.student_id == student_id)
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
+    items = db.scalars(base_stmt.order_by(AttendanceRecord.marked_at.desc()).offset((p - 1) * size).limit(size)).all()
     return page([AttendanceRecordOut.model_validate(i).model_dump(mode="json") for i in items], total, p, size)

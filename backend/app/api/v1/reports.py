@@ -4,19 +4,21 @@ from datetime import date
 from io import BytesIO
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import require_roles
+from app.api.deps import get_current_user, require_roles
 from app.core.responses import ok, page as page_response
 from app.db.session import get_db
+from app.models.entities import AttendanceRecord, AttendanceSession, Classroom, Student, SubjectAssignment, User
 from app.models.enums import UserRole
 from app.schemas.reports import AttendanceReportFilters
 from app.services.data_io import dataframe_to_csv_bytes, dataframe_to_excel_bytes
 from app.services.reports import ReportService
 
-router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY))])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY, UserRole.STUDENT))])
 
 
 def _stream(data: bytes, filename: str, media_type: str) -> StreamingResponse:
@@ -304,20 +306,6 @@ def missing_attendance(filters: AttendanceReportFilters = Depends(), db: Session
     return page_response(items, total, filters.page, filters.size)
 
 
-@router.get("/export/{kind}")
-def export_report(
-    kind: str,
-    file_format: str = Query("csv", pattern="^(csv|xlsx)$"),
-    filters: AttendanceReportFilters = Depends(),
-    db: Session = Depends(get_db),
-):
-    service = ReportService(db)
-    payload = service.export_xlsx(kind, **filters.model_dump(exclude={"page", "size", "threshold"})) if file_format == "xlsx" else service.export_csv(kind, **filters.model_dump(exclude={"page", "size", "threshold"})).encode("utf-8")
-    filename = f"{kind}.{file_format}"
-    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_format == "xlsx" else "text/csv"
-    return _stream(payload, filename, media_type)
-
-
 @router.get("/export/csv")
 def export_csv(
     filters: AttendanceReportFilters = Depends(),
@@ -336,3 +324,55 @@ def export_xlsx(
     service = ReportService(db)
     payload = service.export_xlsx("records", **filters.model_dump(exclude={"page", "size", "threshold"}))
     return _stream(payload, "attendance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.get("/export/{kind}")
+def export_report(
+    kind: str,
+    file_format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    filters: AttendanceReportFilters = Depends(),
+    db: Session = Depends(get_db),
+):
+    service = ReportService(db)
+    payload = service.export_xlsx(kind, **filters.model_dump(exclude={"page", "size", "threshold"})) if file_format == "xlsx" else service.export_csv(kind, **filters.model_dump(exclude={"page", "size", "threshold"})).encode("utf-8")
+    filename = f"{kind}.{file_format}"
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_format == "xlsx" else "text/csv"
+    return _stream(payload, filename, media_type)
+
+
+@router.get("/student")
+def student_report(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    p: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+):
+    student = db.scalar(select(Student).where(Student.user_id == user.id))
+    if not student:
+        raise HTTPException(404, "Student profile not found")
+    stmt = (
+        select(AttendanceRecord)
+        .options(
+            selectinload(AttendanceRecord.session).selectinload(AttendanceSession.subject_assignment).selectinload(SubjectAssignment.subject),
+            selectinload(AttendanceRecord.session).selectinload(AttendanceSession.classroom),
+        )
+        .where(AttendanceRecord.student_id == student.id)
+    )
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    records = db.scalars(stmt.order_by(AttendanceRecord.marked_at.desc()).offset((p - 1) * size).limit(size)).all()
+    items = [
+        {
+            "id": r.id,
+            "session_id": r.session_id,
+            "session_date": r.session.session_date.isoformat() if r.session else None,
+            "subject_code": r.session.subject_assignment.subject.code if r.session and r.session.subject_assignment and r.session.subject_assignment.subject else None,
+            "subject_name": r.session.subject_assignment.subject.name if r.session and r.session.subject_assignment and r.session.subject_assignment.subject else "Class",
+            "classroom": r.session.classroom.name if r.session and r.session.classroom else None,
+            "status": r.status.value.upper() if r.status else "UNKNOWN",
+            "marked_at": r.marked_at.isoformat() if r.marked_at else None,
+            "source": r.source.value if r.source else "face",
+            "confidence": r.confidence,
+        }
+        for r in records
+    ]
+    return page_response(items, total, p, size)

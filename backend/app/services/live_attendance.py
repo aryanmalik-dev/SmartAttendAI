@@ -122,6 +122,42 @@ class LiveAttendanceService:
             return session
         if session.status != SessionStatus.ACTIVE:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attendance session is not active")
+
+        sa = session.subject_assignment
+        subj = sa.subject if sa else None
+        if sa and subj:
+            section_student_ids = set(
+                self.db.scalars(
+                    select(Student.id).where(
+                        Student.department_id == subj.department_id,
+                        Student.course_id == subj.course_id,
+                        Student.semester == subj.semester,
+                        Student.section == sa.section,
+                    )
+                ).all()
+            )
+            marked_student_ids = set(
+                self.db.scalars(
+                    select(AttendanceRecord.student_id).where(
+                        AttendanceRecord.session_id == session.id
+                    )
+                ).all()
+            )
+            unmarked_ids = section_student_ids - marked_student_ids
+            now = datetime.now(timezone.utc)
+            for sid in unmarked_ids:
+                self.db.add(
+                    AttendanceRecord(
+                        session_id=session.id,
+                        student_id=sid,
+                        marked_by_id=user.id,
+                        status=AttendanceStatus.ABSENT,
+                        source=AttendanceSource.MANUAL,
+                        confidence=None,
+                        marked_at=now,
+                    )
+                )
+
         session.status = SessionStatus.COMPLETED
         session.end_time = datetime.now(timezone.utc).time()
         self.db.commit()
@@ -146,11 +182,23 @@ class LiveAttendanceService:
         faces = self.provider.extract(image_bytes)
         threshold = get_settings().face_similarity_threshold
 
-        active_embeddings = self.db.scalars(
+        sa = session.subject_assignment
+        subj = sa.subject if sa else None
+
+        emb_query = (
             select(FaceEmbedding)
+            .join(Student, FaceEmbedding.student_id == Student.id)
             .where(FaceEmbedding.is_active.is_(True))
             .options(selectinload(FaceEmbedding.student).selectinload(Student.user))
-        ).all()
+        )
+        if sa and subj:
+            emb_query = emb_query.where(
+                Student.course_id == subj.course_id,
+                Student.department_id == subj.department_id,
+                Student.semester == subj.semester,
+                Student.section == sa.section,
+            )
+        active_embeddings = self.db.scalars(emb_query).all()
 
         existing_records = self.db.scalars(
             select(AttendanceRecord).where(AttendanceRecord.session_id == session_id)
@@ -203,6 +251,7 @@ class LiveAttendanceService:
 
             seen_students.add(best_embedding.student_id)
             record = existing_by_student.get(best_embedding.student_id)
+            already_marked = record is not None and record.status in {AttendanceStatus.PRESENT, AttendanceStatus.LATE}
             if record is None:
                 record = AttendanceRecord(
                     session_id=session_id,
@@ -223,13 +272,15 @@ class LiveAttendanceService:
                 record.marked_at = datetime.now(timezone.utc)
 
             marked_records.append(record)
+            if already_marked:
+                duplicate_faces += 1
             matches.append(
                 LiveFaceMatchOut(
                     student_id=best_embedding.student_id,
                     student_name=student_name,
                     confidence=best_score,
                     bbox=face.bbox,
-                    status="marked",
+                    status="duplicate" if already_marked else "marked",
                 )
             )
 

@@ -7,6 +7,7 @@ from app.models.entities import User
 from app.api.deps import get_current_user
 from app.schemas.auth import (
     LoginIn,
+    RefreshTokenIn,
     SendActivationEmailIn,
     ActivateAccountIn,
     ForgotPasswordIn,
@@ -127,16 +128,13 @@ def reset_password(
 
 @router.post("/refresh", response_model=dict)
 def refresh(
-    user: User = Depends(get_current_user),
+    payload: RefreshTokenIn,
     db: Session = Depends(get_db),
 ):
-
-    token = AuthService(db).refresh(
-        user,
-    )
+    token = AuthService(db).refresh(payload.refresh_token)
 
     return ok(
-        token,
+        token.model_dump(mode="json"),
         "Token refreshed",
     )
 

@@ -210,8 +210,8 @@ export function ResourcePage({
 
   function displayValue(field: string, value: unknown) {
     const relation = relationMap.get(field);
-    if (relation && typeof value === "number") {
-      const option = relation.options.find((item) => Number(item.id) === value);
+    if (relation && value !== null && value !== undefined && value !== "") {
+      const option = relation.options.find((item) => String(item.id) === String(value));
       if (option) return relation.label(option);
     }
     return formatCell(value);

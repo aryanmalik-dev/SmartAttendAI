@@ -24,6 +24,8 @@ import { Modal } from "../../components/ui/Modal";
 import { Toast } from "../../components/ui/Toast";
 import { api, listResource } from "../../lib/api";
 
+type SessionStatusType = "scheduled" | "active" | "completed" | "cancelled";
+
 interface SessionItem {
   id: number;
   subject_assignment_id: number;
@@ -31,7 +33,7 @@ interface SessionItem {
   session_date: string;
   start_time: string;
   end_time?: string | null;
-  status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  status: SessionStatusType | string;
   notes?: string | null;
   created_at: string;
   subject_assignment?: {
@@ -57,7 +59,7 @@ interface OptionItem {
 export function SessionManagementPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -71,7 +73,7 @@ export function SessionManagementPage() {
   const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [startTime, setStartTime] = useState<string>("09:00");
   const [endTime, setEndTime] = useState<string>("");
-  const [status, setStatus] = useState<"SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED">("IN_PROGRESS");
+  const [status, setStatus] = useState<SessionStatusType>("active");
   const [notes, setNotes] = useState<string>("");
 
   // Queries
@@ -100,8 +102,8 @@ export function SessionManagementPage() {
 
   // Filtered List
   const filteredSessions = useMemo(() => {
-    if (statusFilter === "ALL") return sessions;
-    return sessions.filter((s) => s.status === statusFilter);
+    if (statusFilter === "all") return sessions;
+    return sessions.filter((s) => s.status?.toLowerCase() === statusFilter.toLowerCase());
   }, [sessions, statusFilter]);
 
   // Mutations
@@ -159,7 +161,7 @@ export function SessionManagementPage() {
       const currentFormattedTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       return (
         await api.patch(`/attendance/sessions/${session.id}`, {
-          status: "COMPLETED",
+          status: "completed",
           end_time: currentFormattedTime
         })
       ).data;
@@ -192,7 +194,7 @@ export function SessionManagementPage() {
     setSessionDate(new Date().toISOString().slice(0, 10));
     setStartTime("09:00");
     setEndTime("");
-    setStatus("IN_PROGRESS");
+    setStatus("active");
     setNotes("");
   }
 
@@ -203,7 +205,8 @@ export function SessionManagementPage() {
     setSessionDate(session.session_date);
     setStartTime(session.start_time);
     setEndTime(session.end_time || "");
-    setStatus(session.status);
+    const sessStatus = (session.status?.toLowerCase() || "active") as SessionStatusType;
+    setStatus(sessStatus);
     setNotes(session.notes || "");
   }
 
@@ -242,7 +245,7 @@ export function SessionManagementPage() {
             <Radio size={18} className="text-emerald-600 animate-pulse" />
           </div>
           <p className="mt-2 text-2xl font-bold text-zinc-900">
-            {sessions.filter((s) => s.status === "IN_PROGRESS").length}
+            {sessions.filter((s) => s.status?.toLowerCase() === "active").length}
           </p>
         </Card>
         <Card className="p-4 border-l-4 border-l-blue-500">
@@ -251,7 +254,7 @@ export function SessionManagementPage() {
             <Clock size={18} className="text-blue-600" />
           </div>
           <p className="mt-2 text-2xl font-bold text-zinc-900">
-            {sessions.filter((s) => s.status === "SCHEDULED").length}
+            {sessions.filter((s) => s.status?.toLowerCase() === "scheduled").length}
           </p>
         </Card>
         <Card className="p-4 border-l-4 border-l-zinc-400">
@@ -260,7 +263,7 @@ export function SessionManagementPage() {
             <CheckCircle2 size={18} className="text-zinc-600" />
           </div>
           <p className="mt-2 text-2xl font-bold text-zinc-900">
-            {sessions.filter((s) => s.status === "COMPLETED").length}
+            {sessions.filter((s) => s.status?.toLowerCase() === "completed").length}
           </p>
         </Card>
         <Card className="p-4 border-l-4 border-l-red-500">
@@ -269,7 +272,7 @@ export function SessionManagementPage() {
             <XCircle size={18} className="text-red-500" />
           </div>
           <p className="mt-2 text-2xl font-bold text-zinc-900">
-            {sessions.filter((s) => s.status === "CANCELLED").length}
+            {sessions.filter((s) => s.status?.toLowerCase() === "cancelled").length}
           </p>
         </Card>
       </div>
@@ -279,16 +282,22 @@ export function SessionManagementPage() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {/* Status Tabs */}
           <div className="flex flex-wrap items-center gap-1 rounded-xl bg-zinc-100 p-1 text-xs font-semibold text-zinc-600 w-full md:w-auto">
-            {["ALL", "IN_PROGRESS", "SCHEDULED", "COMPLETED", "CANCELLED"].map((st) => (
+            {[
+              { id: "all", label: "All Sessions" },
+              { id: "active", label: "Active Live" },
+              { id: "scheduled", label: "Scheduled" },
+              { id: "completed", label: "Completed" },
+              { id: "cancelled", label: "Cancelled" },
+            ].map((tab) => (
               <button
-                key={st}
+                key={tab.id}
                 type="button"
-                onClick={() => setStatusFilter(st)}
+                onClick={() => setStatusFilter(tab.id)}
                 className={`rounded-lg px-3 py-1.5 transition-all ${
-                  statusFilter === st ? "bg-white text-zinc-900 shadow-sm font-bold" : "hover:text-zinc-900"
+                  statusFilter === tab.id ? "bg-white text-zinc-900 shadow-sm font-bold" : "hover:text-zinc-900"
                 }`}
               >
-                {st === "ALL" ? "All Sessions" : st.replace("_", " ")}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -388,25 +397,25 @@ export function SessionManagementPage() {
 
                     {/* Status Badge */}
                     <td className="px-4 py-3">
-                      {sess.status === "IN_PROGRESS" && (
+                      {sess.status?.toLowerCase() === "active" && (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200/80">
                           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                          IN PROGRESS
+                          ACTIVE LIVE
                         </span>
                       )}
-                      {sess.status === "SCHEDULED" && (
+                      {sess.status?.toLowerCase() === "scheduled" && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200/80">
                           <Clock size={12} />
                           SCHEDULED
                         </span>
                       )}
-                      {sess.status === "COMPLETED" && (
+                      {sess.status?.toLowerCase() === "completed" && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600 border border-zinc-200">
                           <CheckCircle2 size={12} />
                           COMPLETED
                         </span>
                       )}
-                      {sess.status === "CANCELLED" && (
+                      {sess.status?.toLowerCase() === "cancelled" && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 border border-red-200/80">
                           <XCircle size={12} />
                           CANCELLED
@@ -417,7 +426,7 @@ export function SessionManagementPage() {
                     {/* Actions */}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {sess.status === "IN_PROGRESS" && (
+                        {sess.status?.toLowerCase() === "active" && (
                           <button
                             type="button"
                             onClick={() => endSessionMutation.mutate(sess)}
@@ -540,13 +549,13 @@ export function SessionManagementPage() {
             <span className="mb-1 block uppercase tracking-wider text-zinc-500 font-semibold">Session Status</span>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
+              onChange={(e) => setStatus(e.target.value as SessionStatusType)}
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
             >
-              <option value="IN_PROGRESS">IN_PROGRESS (Live Active)</option>
-              <option value="SCHEDULED">SCHEDULED (Upcoming)</option>
-              <option value="COMPLETED">COMPLETED (Finished)</option>
-              <option value="CANCELLED">CANCELLED</option>
+              <option value="active">Active (Live Attendance)</option>
+              <option value="scheduled">Scheduled (Upcoming)</option>
+              <option value="completed">Completed (Finished)</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </label>
 

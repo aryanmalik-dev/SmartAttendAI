@@ -49,6 +49,10 @@ class TokenOut(BaseModel):
     user: LoginUserOut
 
 
+class RefreshTokenIn(BaseModel):
+    refresh_token: str
+
+
 # ==========================
 # Activation
 # ==========================

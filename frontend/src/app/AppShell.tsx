@@ -49,7 +49,10 @@ const nav: NavItem[] = [
   { to: "/courses", label: "Courses & Degrees", icon: BookOpen, roles: ["admin"], section: "Academic Management" },
   { to: "/subjects", label: "Subjects Catalog", icon: Shapes, roles: ["admin", "faculty"], section: "Academic Management" },
   { to: "/subject-assignments", label: "Faculty Assignments", icon: Users, roles: ["admin"], section: "Academic Management" },
-  { to: "/classrooms", label: "Classrooms & Cameras", icon: Building2, roles: ["admin", "faculty"], section: "Academic Management" }
+  { to: "/classrooms", label: "Classrooms & Cameras", icon: Building2, roles: ["admin", "faculty"], section: "Academic Management" },
+
+  // Administration
+  { to: "/admin", label: "System Administration", icon: Settings, roles: ["admin"], section: "Administration" }
 ];
 
 function roleLabel(roles: Role[]) {

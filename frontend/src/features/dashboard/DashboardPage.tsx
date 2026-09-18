@@ -55,7 +55,7 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Toast } from "../../components/ui/Toast";
-import { api, dashboard } from "../../lib/api";
+import { api, dashboard, downloadFromResponse, exportResource } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 
 const palette = ["#2563eb", "#0f766e", "#64748b", "#1d4ed8", "#3b82f6", "#60a5fa"];
@@ -82,11 +82,15 @@ function AdminDashboardView({ data }: { data: any }) {
   const navigate = useNavigate();
   const [toast, setToast] = useState<string | null>(null);
 
-  const exportAudit = () => {
-    setToast("Exporting full university campus attendance audit report...");
-    setTimeout(() => {
-      window.open("/api/v1/reports/export?format=csv", "_blank");
-    }, 600);
+  const exportAudit = async () => {
+    try {
+      setToast("Exporting full university campus attendance audit report...");
+      const blob = await exportResource("/reports/export/csv");
+      downloadFromResponse(blob, "campus-attendance-audit.csv");
+      setToast("Campus audit report downloaded successfully.");
+    } catch {
+      setToast("Failed to download campus audit report.");
+    }
   };
 
   const handleEndSession = async (sessionId: number) => {
@@ -227,7 +231,7 @@ function AdminDashboardView({ data }: { data: any }) {
             </h3>
             <p className="text-xs text-zinc-500">Real-time telemetry of classes currently in session across university rooms.</p>
           </div>
-          <Button onClick={() => navigate("/vision")} variant="outline" className="text-xs font-bold">
+          <Button onClick={() => navigate("/monitoring")} variant="outline" className="text-xs font-bold">
             <Eye size={14} className="mr-1.5 text-brand-600" /> Open AI Vision Telemetry
           </Button>
         </div>
@@ -272,7 +276,7 @@ function AdminDashboardView({ data }: { data: any }) {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button onClick={() => navigate("/vision")} variant="outline" className="h-8 px-2.5 text-xs font-bold">
+                        <Button onClick={() => navigate("/monitoring")} variant="outline" className="h-8 px-2.5 text-xs font-bold">
                           <Eye size={13} className="mr-1 text-brand-600" /> Stream
                         </Button>
                         <Button onClick={() => handleEndSession(session.id)} variant="danger" className="h-8 px-2.5 text-xs font-bold">
@@ -516,16 +520,17 @@ function StudentDashboardView() {
   const isEligible = erpData?.is_eligible ?? (overallPct >= 75);
 
   const filteredLogs = useMemo(() => {
-    const items = recentLogsQuery.data?.items ?? [];
+    const rawItems = recentLogsQuery.data?.items;
+    const items = Array.isArray(rawItems) && rawItems.length > 0 ? rawItems : (erpData?.recent_records ?? []);
     return items.filter((log: any) => {
-      const matchesStatus = statusFilter === "ALL" || log.status === statusFilter;
+      const matchesStatus = statusFilter === "ALL" || (log.status?.toUpperCase() === statusFilter.toUpperCase());
       const matchesSearch =
         !searchQuery ||
         (log.subject_code && log.subject_code.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (log.subject_name && log.subject_name.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesStatus && matchesSearch;
     });
-  }, [recentLogsQuery.data, statusFilter, searchQuery]);
+  }, [recentLogsQuery.data, erpData, statusFilter, searchQuery]);
 
   const scheduleData: Record<string, Array<{ time: string; code: string; subject: string; room: string; faculty: string }>> = {
     Mon: [
@@ -556,11 +561,15 @@ function StudentDashboardView() {
     ],
   };
 
-  const exportReport = () => {
-    setToast("Exporting official ERP attendance report PDF...");
-    setTimeout(() => {
-      window.open("/api/v1/reports/export?format=csv", "_blank");
-    }, 800);
+  const exportReport = async () => {
+    try {
+      setToast("Exporting official ERP attendance report...");
+      const blob = await exportResource("/reports/export/records", { file_format: "csv" });
+      downloadFromResponse(blob, `attendance-report-${user?.full_name?.toLowerCase().replaceAll(" ", "-") ?? "student"}.csv`);
+      setToast("Attendance report downloaded successfully.");
+    } catch {
+      setToast("Failed to download attendance report.");
+    }
   };
 
   return (

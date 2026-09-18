@@ -833,6 +833,16 @@ class ReportService:
         return dataframe_to_excel_bytes(df, kind)
 
     def _export_dataframe(self, kind: str, **filters) -> pd.DataFrame:
+        kind_map = {
+            "departments": "department",
+            "courses": "course",
+            "subjects": "subject",
+            "low-attendance": "low",
+            "top-attendance": "top",
+            "missing-attendance": "missing",
+        }
+        kind = kind_map.get(kind, kind)
+
         if kind == "records":
             return self.dataframe_from_records(**filters)
         if kind == "students":
@@ -847,6 +857,20 @@ class ReportService:
             return pd.DataFrame(rows)
         if kind == "missing":
             rows, _ = self.missing_attendance_report(AttendanceReportFilters(**filters))
+            return pd.DataFrame(rows)
+        if kind == "daily":
+            rep = self.daily_report(filters.get("report_date"))
+            return pd.DataFrame([rep])
+        if kind == "weekly":
+            rep = self.weekly_report(filters.get("report_date"))
+            days = rep.get("days", [])
+            return pd.DataFrame(days if days else [rep])
+        if kind == "monthly":
+            rep = self.monthly_report(filters.get("report_date"))
+            days = rep.get("days", [])
+            return pd.DataFrame(days if days else [rep])
+        if kind == "semester":
+            rows, _ = self.student_summaries(page=1, size=100000, **filters)
             return pd.DataFrame(rows)
         raise HTTPException(status_code=400, detail="Invalid report export kind")
 

@@ -125,6 +125,10 @@ export function AttendancePage() {
     queryKey: ["attendance-assignments"],
     queryFn: () => listResource<SubjectAssignmentOption>("/subject-assignments", { p: 1, size: 100 })
   });
+  const studentsQuery = useQuery({
+    queryKey: ["attendance-students-select"],
+    queryFn: () => listResource<any>("/students", { p: 1, size: 200 })
+  });
 
   const selectedSession = useMemo(
     () => sessionsQuery.data?.items.find((item) => item.id === selectedSessionId) ?? null,
@@ -696,8 +700,18 @@ export function AttendancePage() {
                   onSubmit={correctionForm.handleSubmit((values) => markManual.mutate(values))}
                 >
                   <label className="block text-xs font-semibold text-zinc-700">
-                    Student ID
-                    <Input {...correctionForm.register("student_id")} placeholder="e.g. 101" className="mt-1" />
+                    Select Student
+                    <select
+                      {...correctionForm.register("student_id")}
+                      className="w-full mt-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                    >
+                      <option value="">-- Choose Student --</option>
+                      {(studentsQuery.data?.items ?? []).map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s.roll_no ? `[Roll: ${s.roll_no}] ` : ""}{s.user?.full_name || s.full_name} ({s.admission_no || s.student_number})
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
                   <label className="block text-xs font-semibold text-zinc-700">

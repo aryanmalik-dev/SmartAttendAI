@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    decode_token,
     hash_password,
     verify_password,
 )
@@ -41,6 +42,62 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account disabled",
+            )
+
+        roles = [r.role.value if hasattr(r, "role") else r.value if hasattr(r, "value") else str(r) for r in user.roles]
+
+        access = create_access_token(
+            str(user.id),
+            {
+                "roles": roles,
+            },
+        )
+
+        refresh = create_refresh_token(
+            str(user.id),
+        )
+
+        return TokenOut(
+            access_token=access,
+            refresh_token=refresh,
+            user=LoginUserOut.model_validate(user),
+        )
+
+    def refresh(self, refresh_token: str) -> TokenOut:
+        try:
+            payload = decode_token(refresh_token)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+            )
+
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token subject",
+            )
+
+        try:
+            uid = int(user_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token subject",
+            )
+
+        user = self.db.scalar(select(User).where(User.id == uid))
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
             )
 
         roles = [r.role.value if hasattr(r, "role") else r.value if hasattr(r, "value") else str(r) for r in user.roles]

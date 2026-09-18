@@ -53,7 +53,8 @@ def recognize_and_mark(db: Session, session_id: int, marked_by_id: int, image_by
                 AttendanceRecord.student_id == best_embedding.student_id,
             )
         )
-        if existing is None:
+        is_new = existing is None
+        if is_new:
             existing = AttendanceRecord(
                 session_id=session_id,
                 student_id=best_embedding.student_id,
@@ -72,7 +73,7 @@ def recognize_and_mark(db: Session, session_id: int, marked_by_id: int, image_by
             "student_name": student.user.full_name if student else "Student",
             "confidence": best_score,
             "bbox": face.bbox,
-            "status": "marked" if existing in marked else "duplicate",
+            "status": "marked" if is_new else "duplicate",
         })
     db.commit()
     for record in marked:
@@ -87,7 +88,7 @@ def attendance_percentage(db: Session, student_id: int) -> float:
     present = db.scalar(
         select(func.count()).select_from(AttendanceRecord).where(
             AttendanceRecord.student_id == student_id,
-            AttendanceRecord.status == AttendanceStatus.PRESENT,
+            AttendanceRecord.status.in_([AttendanceStatus.PRESENT, AttendanceStatus.LATE]),
         )
     ) or 0
     return round((present / total) * 100, 2)

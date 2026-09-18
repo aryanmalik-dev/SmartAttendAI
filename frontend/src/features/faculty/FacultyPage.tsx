@@ -43,7 +43,14 @@ const createSchema = z.object({
   phone: z.string().optional().or(z.literal(""))
 });
 
-const updateSchema = createSchema.extend({
+const updateSchema = z.object({
+  full_name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8).optional().or(z.literal("")),
+  employee_id: z.string().min(2),
+  department_id: z.coerce.number().int().positive(),
+  designation: z.string().optional().or(z.literal("")),
+  phone: z.string().optional().or(z.literal("")),
   is_active: z.enum(["true", "false"]).optional()
 });
 

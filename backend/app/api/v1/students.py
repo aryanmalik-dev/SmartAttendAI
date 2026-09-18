@@ -6,7 +6,7 @@ from app.api.deps import get_current_user, require_roles
 from app.core.config import get_settings
 from app.core.responses import ok
 from app.db.session import get_db
-from app.models.entities import AttendanceRecord, AttendanceSession, FaceEmbedding, Student, SubjectAssignment, User
+from app.models.entities import AttendanceRecord, AttendanceSession, FaceEmbedding, Student, Subject, SubjectAssignment, User
 from app.models.enums import AttendanceStatus, UserRole
 from app.services.attendance import attendance_percentage
 from app.services.face import get_face_provider
@@ -42,11 +42,17 @@ def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends
     if not student:
         raise HTTPException(404, "Student profile not found")
 
-    # Fetch all subject assignments for student's section
+    # Fetch all subject assignments for student's course, department, semester and section
     assignments = db.scalars(
         select(SubjectAssignment)
+        .join(Subject, SubjectAssignment.subject_id == Subject.id)
         .options(selectinload(SubjectAssignment.subject))
-        .where(SubjectAssignment.section == student.section)
+        .where(
+            SubjectAssignment.section == student.section,
+            Subject.course_id == student.course_id,
+            Subject.department_id == student.department_id,
+            Subject.semester == student.semester,
+        )
     ).all()
 
     subject_breakdown = []
@@ -55,7 +61,7 @@ def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends
 
     for sa in assignments:
         subj = sa.subject
-        if not subj or subj.course_id != student.course_id:
+        if not subj:
             continue
 
         session_ids = db.scalars(
@@ -115,6 +121,33 @@ def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends
     else:
         overall_margin_msg = "No classes conducted yet."
 
+    recent_records_stmt = (
+        select(AttendanceRecord)
+        .options(
+            selectinload(AttendanceRecord.session).selectinload(AttendanceSession.subject_assignment).selectinload(SubjectAssignment.subject),
+            selectinload(AttendanceRecord.session).selectinload(AttendanceSession.classroom),
+        )
+        .where(AttendanceRecord.student_id == student.id)
+        .order_by(AttendanceRecord.marked_at.desc())
+        .limit(50)
+    )
+    recent_records_rows = db.scalars(recent_records_stmt).all()
+    recent_records = [
+        {
+            "id": r.id,
+            "session_id": r.session_id,
+            "session_date": r.session.session_date.isoformat() if r.session else None,
+            "subject_code": r.session.subject_assignment.subject.code if r.session and r.session.subject_assignment and r.session.subject_assignment.subject else None,
+            "subject_name": r.session.subject_assignment.subject.name if r.session and r.session.subject_assignment and r.session.subject_assignment.subject else "Class",
+            "classroom": r.session.classroom.name if r.session and r.session.classroom else None,
+            "status": r.status.value.upper() if r.status else "UNKNOWN",
+            "marked_at": r.marked_at.isoformat() if r.marked_at else None,
+            "source": r.source.value if r.source else "face",
+            "confidence": r.confidence,
+        }
+        for r in recent_records_rows
+    ]
+
     return ok(
         {
             "student_id": student.id,
@@ -137,6 +170,7 @@ def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends
             "is_eligible": is_eligible,
             "overall_margin_msg": overall_margin_msg,
             "subject_breakdown": subject_breakdown,
+            "recent_records": recent_records,
         }
     )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import shutil
 
 import pandas as pd
 from fastapi import HTTPException, UploadFile
@@ -230,6 +231,9 @@ class StudentService:
 
     def delete_student(self, student_id: int) -> None:
         student = self._get(student_id)
+        student_dir = self.settings.face_upload_root / "students" / str(student.id)
+        if student_dir.exists():
+            shutil.rmtree(student_dir, ignore_errors=True)
         self.db.delete(student.user)
         self.db.commit()
 
@@ -400,8 +404,8 @@ class StudentService:
                         date_of_birth=data.date_of_birth,
                         student_mobile=data.student_mobile,
                         father_mobile=data.father_mobile,
-                        department_id=department.id,
-                        course_id=course.id,
+                        department_id=data.department_id,
+                        course_id=data.course_id,
                         enrollment_year=data.enrollment_year,
                         semester=data.semester,
                         section=data.section,

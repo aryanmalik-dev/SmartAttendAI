@@ -88,5 +88,11 @@ def decode_base64_image(image_base64: str) -> bytes:
         raise HTTPException(status_code=400, detail="Image must be a valid base64 string") from exc
 
 
+_face_provider: FaceRecognitionProvider | None = None
+
+
 def get_face_provider() -> FaceRecognitionProvider:
-    return InsightFaceArcFaceProvider()
+    global _face_provider
+    if _face_provider is None:
+        _face_provider = InsightFaceArcFaceProvider()
+    return _face_provider

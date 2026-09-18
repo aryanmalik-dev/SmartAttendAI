@@ -30,6 +30,7 @@ class SearchService:
                     student_user.full_name.ilike(query),
                     student_user.email.ilike(query),
                     Student.student_number.ilike(query),
+                    Student.roll_no.ilike(query),
                 )
             )
             .limit(limit)
@@ -135,7 +136,7 @@ class SearchService:
                 Department.name.label("department_name"),
             )
             .select_from(Course)
-            .join(Department, Department.course_id == Course.id)
+            .outerjoin(Department, Department.course_id == Course.id)
             .where(or_(Course.name.ilike(query), Course.abbreviation.ilike(query), Department.name.ilike(query)))
             .limit(limit)
         ).mappings().all()

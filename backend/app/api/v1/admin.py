@@ -418,6 +418,16 @@ def update_student(
     return ok(StudentOut.model_validate(item).model_dump(mode="json"), "Student updated")
 
 
+@router.delete("/students/{item_id}")
+def delete_student(
+    item_id: int,
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    StudentService(db).delete_student(item_id)
+    return ok(message="Student deleted")
+
+
 @router.post("/settings")
 def upsert_setting(
     payload: SettingsIn,
@@ -569,6 +579,6 @@ def export_students(file_format: str = "csv", search: str | None = None, sort: s
 
 
 @router.get("/students/template")
-def template_students(file_format: str = "csv", db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.FACULTY))):
+def template_students(file_format: str = "csv", db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY))):
     filename, media_type = _download_filename("students_template", file_format)
     return _stream_bytes(StudentService(db).template(file_format), filename, media_type)
